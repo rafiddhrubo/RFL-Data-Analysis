@@ -2,13 +2,13 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# Streamlit Configuration
-st.set_page_config(page_title="Operations Hub - NPT & Performance", layout="wide")
+# Page Setup
+st.set_page_config(page_title="Operations Hub - Downtime & Performance", layout="wide")
 
-# Master Master Navigation Bar
+# Master Navigation Bar
 st.sidebar.title("📌 Operations Hub")
 app_mode = st.sidebar.radio(
-    "Select Analysis Module:",
+    "Select Main Module:",
     ["⏱️ NPT Analysis", "❌ Rejection Analysis", "🏭 Production Data", "📊 Master Summary"]
 )
 
@@ -132,10 +132,11 @@ def parse_mc_wise_sheet(df_raw):
 # MODULE 1: NPT ANALYSIS
 # -----------------------------------------------------------------------------
 if app_mode == "⏱️ NPT Analysis":
-    st.title("⏱️ NPT Analysis Dashboard (MC Wise & Line Performance)")
+    st.title("⏱️ Non-Productive Time (NPT) Analysis")
     
+    # File Uploader in Sidebar
     uploaded_file = st.sidebar.file_uploader(
-        "Upload Daily NPT File (.xlsx or .csv)", 
+        "Upload NPT Report (.xlsx or .csv)", 
         type=["xlsx", "xls", "csv"],
         key="npt_uploader"
     )
@@ -145,13 +146,11 @@ if app_mode == "⏱️ NPT Analysis":
             df_parsed = pd.DataFrame()
             
             if uploaded_file.name.endswith('.csv'):
-                df_raw = pd.read_csv(uploaded_file)
-                df_parsed = df_raw
+                df_parsed = pd.read_csv(uploaded_file)
             else:
                 excel_file = pd.ExcelFile(uploaded_file)
                 sheet_names = excel_file.sheet_names
                 
-                # Check for MC Wise tab or raw Data tab
                 if "MC Wise" in sheet_names:
                     df_mcwise_raw = pd.read_excel(uploaded_file, sheet_name="MC Wise")
                     df_parsed = parse_mc_wise_sheet(df_mcwise_raw)
@@ -160,116 +159,216 @@ if app_mode == "⏱️ NPT Analysis":
                     df_raw = pd.read_excel(uploaded_file, sheet_name=selected_sheet)
                     df_parsed = df_raw
 
-            # Ensure columns are normalized
+            # Normalize column names & Map Master Details
             if 'Machine' in df_parsed.columns and 'MC ID' not in df_parsed.columns:
                 df_parsed['MC ID'] = df_parsed['Machine']
             
             if 'MC ID' in df_parsed.columns:
-                # Merge master MC ID & Line mappings
                 df_parsed = df_parsed.merge(df_mc_master, on='MC ID', how='left', suffixes=('', '_master'))
                 if 'MC Number_master' in df_parsed.columns:
                     df_parsed['MC Number'] = df_parsed['MC Number_master']
                 if 'Line_master' in df_parsed.columns:
                     df_parsed['Line'] = df_parsed['Line_master']
 
-            # Make sure numeric fields exist
             if 'Hours' in df_parsed.columns:
                 df_parsed['Hours'] = pd.to_numeric(df_parsed['Hours'], errors='coerce').fillna(0)
             elif 'HR' in df_parsed.columns:
                 df_parsed['Hours'] = pd.to_numeric(df_parsed['HR'], errors='coerce').fillna(0)
 
-            # Filter out zero hour entries
             df_filtered = df_parsed[df_parsed['Hours'] > 0].copy()
 
-            # --- TOP 10 NPT SUMMARY TABLE (RANKED BY HOURS HIGHEST TO LOWEST) ---
-            st.subheader("🏆 Top 10 NPT Loss Summary Ranking (MC Wise)")
-            
-            # Sort from highest to lowest hours
-            df_top10 = df_filtered.sort_values(by="Hours", ascending=False).head(10).copy()
-            
-            total_loss_hours = df_filtered['Hours'].sum()
-            df_top10['%'] = (df_top10['Hours'] / total_loss_hours * 100).map('{:.2f}%'.format) if total_loss_hours > 0 else "0.00%"
-            df_top10['Hours'] = df_top10['Hours'].round(2)
+            st.sidebar.markdown("---")
+            # Dropdown options for NPT sub-analysis
+            npt_view = st.sidebar.selectbox(
+                "Select NPT View:",
+                ["1. Summary", "2. MC wise", "3. Line wise"]
+            )
 
-            # Format final table columns
-            df_top10_table = df_top10.reset_index(drop=True)
-            df_top10_table.index = df_top10_table.index + 1
-            df_top10_table.index.name = "Rank"
+            # -----------------------------------------------------------------
+            # VIEW 1: SUMMARY
+            # -----------------------------------------------------------------
+            if npt_view == "1. Summary":
+                st.header("📊 NPT Overall Executive Summary")
+                
+                total_hours = df_filtered['Hours'].sum()
+                total_incidents = df_filtered['Entry'].sum() if 'Entry' in df_filtered.columns else len(df_filtered)
+                affected_machines = df_filtered['MC ID'].nunique() if 'MC ID' in df_filtered.columns else 0
 
-            display_cols = ['Cause', 'Hours', '%', 'MC Number', 'MC ID', 'Line']
-            avail_cols = [c for c in display_cols if c in df_top10_table.columns]
+                kpi1, kpi2, kpi3 = st.columns(3)
+                kpi1.metric("Total NPT Loss", f"{total_hours:.2f} Hrs")
+                kpi2.metric("Total Incidents", f"{int(total_incidents)}")
+                kpi3.metric("Affected Machines", f"{affected_machines}")
 
-            st.dataframe(df_top10_table[avail_cols], use_container_width=True)
+                st.markdown("---")
 
-            st.markdown("---")
+                col_sum1, col_sum2 = st.columns(2)
+                with col_sum1:
+                    st.subheader("Top Downtime Causes (Overall)")
+                    cause_summary = df_filtered.groupby('Cause')['Hours'].sum().reset_index().sort_values(by='Hours', ascending=False)
+                    fig_cause = px.bar(
+                        cause_summary.head(10),
+                        x='Hours',
+                        y='Cause',
+                        orientation='h',
+                        text_auto='.1f',
+                        color='Hours',
+                        color_continuous_scale='Reds',
+                        title="Top 10 NPT Causes by Hours"
+                    )
+                    fig_cause.update_layout(yaxis={'categoryorder': 'total ascending'})
+                    st.plotly_chart(fig_cause, use_container_width=True)
 
-            # --- SEPARATE ANALYSIS & GRAPH FOR DE LINE ---
-            st.header("⚡ DE Line NPT Dedicated Analysis")
-            st.caption("Machines: D6 to D12 (IMM-90-5 to IMM-160-42) & E1 to E12 (IMM-250-180 to IMM-160-71)")
+                with col_sum2:
+                    st.subheader("NPT Distribution by Production Line")
+                    if 'Line' in df_filtered.columns:
+                        line_summary = df_filtered.groupby('Line')['Hours'].sum().reset_index()
+                        fig_line = px.pie(
+                            line_summary,
+                            names='Line',
+                            values='Hours',
+                            hole=0.4,
+                            title="Total Hours Lost per Line"
+                        )
+                        st.plotly_chart(fig_line, use_container_width=True)
 
-            df_de_line = df_filtered[df_filtered['Line'] == 'DE'].copy()
+            # -----------------------------------------------------------------
+            # VIEW 2: MC WISE (2 Dedicated Tables)
+            # -----------------------------------------------------------------
+            elif npt_view == "2. MC wise":
+                st.header("⚙️ Machine-Wise NPT Loss Analysis")
+                
+                # --- TABLE 1: OVERALL TOP 10 NPT LOSS RANKING ---
+                st.subheader("🏆 Table 1: Top 10 NPT Loss Summary Ranking (Overall MC Wise)")
+                st.caption("Ranked by hours from highest to lowest.")
 
-            if not df_de_line.empty:
-                col_de1, col_de2 = st.columns([2, 1])
+                total_loss_hours = df_filtered['Hours'].sum()
+                df_top10 = df_filtered.sort_values(by="Hours", ascending=False).head(10).copy()
+                df_top10['%'] = (df_top10['Hours'] / total_loss_hours * 100).map('{:.2f}%'.format) if total_loss_hours > 0 else "0.00%"
+                df_top10['Hours'] = df_top10['Hours'].round(2)
 
-                with col_de1:
-                    st.subheader("📊 DE Line NPT Loss by Machine Number")
+                df_top10_table = df_top10.reset_index(drop=True)
+                df_top10_table.index = df_top10_table.index + 1
+                df_top10_table.index.name = "Rank"
+
+                display_cols = ['Cause', 'Hours', '%', 'MC Number', 'MC ID', 'Line']
+                avail_cols = [c for c in display_cols if c in df_top10_table.columns]
+
+                st.dataframe(df_top10_table[avail_cols], use_container_width=True)
+
+                st.markdown("---")
+
+                # --- TABLE 2: DEDICATED DE LINE TABLE ---
+                st.subheader("⚡ Table 2: Dedicated DE Line MC Wise NPT Analysis")
+                st.caption("Includes DE Line machines: D6–D12 (IMM-90-5 to IMM-160-42) & E1–E12 (IMM-250-180 to IMM-160-71)")
+
+                df_de_line = df_filtered[df_filtered['Line'] == 'DE'].copy()
+
+                if not df_de_line.empty:
+                    df_de_line['%'] = (df_de_line['Hours'] / df_de_line['Hours'].sum() * 100).map('{:.2f}%'.format)
+                    df_de_line['Hours'] = df_de_line['Hours'].round(2)
+
+                    df_de_table = df_de_line.sort_values(by="Hours", ascending=False).reset_index(drop=True)
+                    df_de_table.index = df_de_table.index + 1
+                    df_de_table.index.name = "Rank"
+
+                    st.dataframe(df_de_table[avail_cols], use_container_width=True)
+
+                    # DE Line Graph
+                    st.subheader("📊 DE Line Machine Downtime Breakdown Chart")
                     fig_de_bar = px.bar(
                         df_de_line.groupby(['MC Number', 'Cause'])['Hours'].sum().reset_index(),
                         x='MC Number',
                         y='Hours',
                         color='Cause',
-                        title="DE Line NPT Loss Distribution across Machines (D6 - E12)",
+                        title="Downtime Hours per DE Line Machine",
                         text_auto='.1f',
                         barmode='stack'
                     )
                     st.plotly_chart(fig_de_bar, use_container_width=True)
+                else:
+                    st.warning("No DE Line NPT loss incidents recorded in the uploaded file.")
 
-                with col_de2:
-                    st.subheader("🥧 DE Line Top Loss Causes")
-                    df_de_cause = df_de_line.groupby('Cause')['Hours'].sum().reset_index().sort_values(by='Hours', ascending=False)
-                    fig_de_pie = px.pie(
-                        df_de_cause.head(5),
-                        names='Cause',
-                        values='Hours',
-                        hole=0.4,
-                        title="DE Line Top Downtime Causes"
-                    )
-                    st.plotly_chart(fig_de_pie, use_container_width=True)
+            # -----------------------------------------------------------------
+            # VIEW 3: LINE WISE
+            # -----------------------------------------------------------------
+            elif npt_view == "3. Line wise":
+                st.header("🏭 Line-Wise NPT Breakdown")
 
-                # DE Line Specific Summary Table
-                st.subheader("📋 DE Line NPT Incident Log Table")
-                df_de_summary = df_de_line.sort_values(by="Hours", ascending=False).reset_index(drop=True)
-                df_de_summary.index = df_de_summary.index + 1
-                df_de_summary.index.name = "Rank"
-                st.dataframe(df_de_summary[avail_cols], use_container_width=True)
+                selected_line = st.selectbox(
+                    "Select Production Line to Analyze:",
+                    ["AB", "CD", "DE", "FG"]
+                )
 
-            else:
-                st.warning("No DE Line NPT loss incidents detected in the uploaded file.")
+                df_line_filtered = df_filtered[df_filtered['Line'] == selected_line].copy()
+
+                if not df_line_filtered.empty:
+                    st.subheader(f"📍 Line {selected_line} Analysis Overview")
+
+                    total_line_hrs = df_line_filtered['Hours'].sum()
+                    line_machines_affected = df_line_filtered['MC ID'].nunique()
+
+                    l1, l2 = st.columns(2)
+                    l1.metric(f"Total NPT Hours for Line {selected_line}", f"{total_line_hrs:.2f} Hrs")
+                    l2.metric("Active Affected Machines", f"{line_machines_affected}")
+
+                    st.markdown("---")
+
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.subheader(f"Loss Hours by Machine ({selected_line} Line)")
+                        fig_line_mc = px.bar(
+                            df_line_filtered.groupby('MC Number')['Hours'].sum().reset_index().sort_values(by='Hours', ascending=False),
+                            x='MC Number',
+                            y='Hours',
+                            color='Hours',
+                            color_continuous_scale='Oranges',
+                            text_auto='.1f',
+                            title=f"Machine Breakdown for Line {selected_line}"
+                        )
+                        st.plotly_chart(fig_line_mc, use_container_width=True)
+
+                    with c2:
+                        st.subheader(f"Top Loss Causes ({selected_line} Line)")
+                        fig_line_causes = px.pie(
+                            df_line_filtered.groupby('Cause')['Hours'].sum().reset_index(),
+                            names='Cause',
+                            values='Hours',
+                            hole=0.4,
+                            title=f"Causes Distribution in Line {selected_line}"
+                        )
+                        st.plotly_chart(fig_line_causes, use_container_width=True)
+
+                    # Table for Selected Line
+                    st.subheader(f"📋 Line {selected_line} NPT Ranking Table")
+                    df_line_filtered['%'] = (df_line_filtered['Hours'] / total_line_hrs * 100).map('{:.2f}%'.format)
+                    df_line_filtered['Hours'] = df_line_filtered['Hours'].round(2)
+
+                    df_line_table = df_line_filtered.sort_values(by="Hours", ascending=False).reset_index(drop=True)
+                    df_line_table.index = df_line_table.index + 1
+                    df_line_table.index.name = "Rank"
+
+                    display_cols = ['Cause', 'Hours', '%', 'MC Number', 'MC ID', 'Line']
+                    avail_cols = [c for c in display_cols if c in df_line_table.columns]
+
+                    st.dataframe(df_line_table[avail_cols], use_container_width=True)
+
+                else:
+                    st.warning(f"No downtime data available for Line {selected_line}.")
 
         except Exception as e:
-            st.error(f"Error parsing NPT file: {e}")
-            st.info("Make sure your Excel file contains 'MC Wise' or standard data columns.")
+            st.error(f"Error processing NPT file: {e}")
+            st.info("Ensure that your uploaded file has valid data or the 'MC Wise' tab.")
     else:
-        st.info("👈 Upload your daily NPT Excel report in the sidebar to generate analysis.")
+        st.info("👈 Upload your daily NPT report in the sidebar to activate the analysis options.")
 
 # -----------------------------------------------------------------------------
-# MODULE 2: REJECTION ANALYSIS
+# OTHER MODULES
 # -----------------------------------------------------------------------------
 elif app_mode == "❌ Rejection Analysis":
     st.title("❌ Rejection & Scrap Analysis Module")
-    st.info("Upload Rejection log files here to analyze scrap rate and defect causes.")
 
-# -----------------------------------------------------------------------------
-# MODULE 3: PRODUCTION DATA
-# -----------------------------------------------------------------------------
 elif app_mode == "🏭 Production Data":
     st.title("🏭 Production Output Module")
-    st.info("Upload Production log files here to analyze hourly output and targets.")
 
-# -----------------------------------------------------------------------------
-# MODULE 4: MASTER SUMMARY
-# -----------------------------------------------------------------------------
 elif app_mode == "📊 Master Summary":
     st.title("📊 Master Executive Summary Dashboard")
-    st.markdown("Consolidated multi-file view across NPT, Quality, and Production.")
