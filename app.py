@@ -135,11 +135,8 @@ def generate_unique_mc_summary(df_input):
     
     for (mc_num, mc_id, line), group in df_input.groupby(['MC Number', 'MC ID', 'Line']):
         tot_hrs = group['Hours'].sum()
-        # Find primary cause (highest loss hours for this machine)
         sorted_group = group.sort_values(by='Hours', ascending=False)
         top_cause = sorted_group.iloc[0]['Cause']
-        
-        # Combine all causes for full visibility
         all_causes = ", ".join(sorted_group['Cause'].unique().tolist())
         
         results.append({
@@ -258,13 +255,13 @@ if app_mode == "⏱️ NPT Analysis":
                         st.plotly_chart(fig_line, use_container_width=True)
 
             # -----------------------------------------------------------------
-            # VIEW 2: MC WISE (Unique Machine Rows & Cumulative Hours)
+            # VIEW 2: MC WISE (With Dynamic Line Selector Option)
             # -----------------------------------------------------------------
             elif npt_view == "2. MC wise":
                 st.header("⚙️ Machine-Wise Cumulative NPT Loss Analysis")
                 st.caption("Each machine is listed exactly ONCE with its cumulative downtime hours and loss causes.")
 
-                # --- TABLE 1: OVERALL TOP 10 MACHINES BY MAXIMUM DOWNTIME ---
+                # --- TABLE 1: OVERALL TOP 10 MACHINES ---
                 st.subheader("🏆 Table 1: Top 10 Machines with Maximum Downtime (Overall)")
                 
                 df_overall_mc = generate_unique_mc_summary(df_filtered)
@@ -277,33 +274,48 @@ if app_mode == "⏱️ NPT Analysis":
 
                 st.markdown("---")
 
-                # --- TABLE 2: DEDICATED DE LINE MACHINE ANALYSIS ---
-                st.subheader("⚡ Table 2: Dedicated DE Line Machine Analysis")
-                st.caption("Machines: D6–D12 & E1–E12 (Each machine listed once with total downtime hours)")
+                # --- DYNAMIC LINE SELECTION & TABLE 2 ---
+                st.subheader("🔍 Table 2: Line-Filtered Unique Machine Analysis")
+                
+                # Available lines dynamically identified + 'All Lines' option
+                available_lines = ["All Lines"] + sorted([str(x) for x in df_filtered['Line'].dropna().unique()])
+                
+                selected_mc_line = st.selectbox(
+                    "Select Line to filter machine breakdown:",
+                    options=available_lines,
+                    index=available_lines.index("AB") if "AB" in available_lines else 0,
+                    key="mc_wise_line_filter"
+                )
 
-                df_de_line = df_filtered[df_filtered['Line'] == 'DE'].copy()
+                if selected_mc_line == "All Lines":
+                    df_selected_line = df_filtered.copy()
+                    st.caption(f"Displaying unique machine breakdown for **All Production Lines**")
+                else:
+                    df_selected_line = df_filtered[df_filtered['Line'] == selected_mc_line].copy()
+                    st.caption(f"Displaying unique machine breakdown specifically for **Line {selected_mc_line}**")
 
-                if not df_de_line.empty:
-                    df_de_mc_summary = generate_unique_mc_summary(df_de_line)
+                if not df_selected_line.empty:
+                    df_selected_mc_summary = generate_unique_mc_summary(df_selected_line)
+                    
                     st.dataframe(
-                        df_de_mc_summary[['MC Number', 'MC ID', 'Line', 'Cumulative Hours', '%', 'Primary Cause', 'All Downtime Causes']], 
+                        df_selected_mc_summary[['MC Number', 'MC ID', 'Line', 'Cumulative Hours', '%', 'Primary Cause', 'All Downtime Causes']], 
                         use_container_width=True
                     )
 
-                    # DE Line Graph
-                    st.subheader("📊 DE Line Machine Downtime Breakdown Chart")
-                    fig_de_bar = px.bar(
-                        df_de_line.groupby(['MC Number', 'Cause'])['Hours'].sum().reset_index(),
+                    # Dynamic Stacked Downtime Chart for Selected Line
+                    st.subheader(f"📊 Line {selected_mc_line} Machine Downtime Breakdown Chart")
+                    fig_selected_line_bar = px.bar(
+                        df_selected_line.groupby(['MC Number', 'Cause'])['Hours'].sum().reset_index(),
                         x='MC Number',
                         y='Hours',
                         color='Cause',
-                        title="Cumulative Downtime Hours per DE Line Machine (D6 - E12)",
+                        title=f"Cumulative Downtime Hours per Machine ({selected_mc_line} Line)",
                         text_auto='.1f',
                         barmode='stack'
                     )
-                    st.plotly_chart(fig_de_bar, use_container_width=True)
+                    st.plotly_chart(fig_selected_line_bar, use_container_width=True)
                 else:
-                    st.warning("No DE Line NPT loss incidents recorded in the uploaded file.")
+                    st.warning(f"No downtime records found for Line {selected_mc_line} in the uploaded report.")
 
             # -----------------------------------------------------------------
             # VIEW 3: LINE WISE
@@ -355,7 +367,6 @@ if app_mode == "⏱️ NPT Analysis":
                         )
                         st.plotly_chart(fig_line_causes, use_container_width=True)
 
-                    # Table for Selected Line (Machine Cumulative View)
                     st.subheader(f"📋 Line {selected_line} Unique Machine Ranking Table")
                     df_line_mc_summary = generate_unique_mc_summary(df_line_filtered)
                     st.dataframe(
