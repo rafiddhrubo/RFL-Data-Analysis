@@ -2,24 +2,137 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# Page Setup
-st.set_page_config(page_title="DE Line Operations Dashboard", layout="wide")
+# Streamlit Configuration
+st.set_page_config(page_title="Operations Hub - NPT & Performance", layout="wide")
 
-# Sidebar - Module Selection (Master Dashboard Navigation)
+# Master Master Navigation Bar
 st.sidebar.title("📌 Operations Hub")
 app_mode = st.sidebar.radio(
     "Select Analysis Module:",
     ["⏱️ NPT Analysis", "❌ Rejection Analysis", "🏭 Production Data", "📊 Master Summary"]
 )
 
-st.sidebar.markdown("---")
-st.sidebar.header("📁 File Upload Area")
+# Embedded MC Master Database (Mapped by Line)
+MC_DATABASE = [
+    {"MC ID": "BMM-05L-11", "MC Number": "BMM-A1", "Line": "BMM"},
+    {"MC ID": "BMM-05L-04", "MC Number": "BMM-A2", "Line": "BMM"},
+    {"MC ID": "BMM-05L-03", "MC Number": "BMM-A3", "Line": "BMM"},
+    {"MC ID": "BMM-05L-06", "MC Number": "BMM-A4", "Line": "BMM"},
+    {"MC ID": "BMM-05L-05", "MC Number": "BMM-A5", "Line": "BMM"},
+    {"MC ID": "BMM-05L-16", "MC Number": "BMM-A6", "Line": "BMM"},
+    {"MC ID": "IMM-250-69", "MC Number": "A1", "Line": "AB"},
+    {"MC ID": "IMM-250-176", "MC Number": "A2", "Line": "AB"},
+    {"MC ID": "IMM-250-171", "MC Number": "A3", "Line": "AB"},
+    {"MC ID": "IMM-250-174", "MC Number": "A4", "Line": "AB"},
+    {"MC ID": "IMM-250-68", "MC Number": "A5", "Line": "AB"},
+    {"MC ID": "IMM-250-287", "MC Number": "B1", "Line": "AB"},
+    {"MC ID": "IMM-250-164", "MC Number": "B2", "Line": "AB"},
+    {"MC ID": "IMM-250-148", "MC Number": "B3", "Line": "AB"},
+    {"MC ID": "IMM-250-165", "MC Number": "B4", "Line": "AB"},
+    {"MC ID": "IMM-250-163", "MC Number": "B5", "Line": "AB"},
+    {"MC ID": "IMM-250-127", "MC Number": "B6", "Line": "AB"},
+    {"MC ID": "IMM-160-41", "MC Number": "B7", "Line": "AB"},
+    {"MC ID": "IMM-160-25", "MC Number": "B8", "Line": "AB"},
+    {"MC ID": "IMM-250-282", "MC Number": "B9", "Line": "AB"},
+    {"MC ID": "IMM-250-166", "MC Number": "B10", "Line": "AB"},
+    {"MC ID": "IMM-250-61", "MC Number": "C1", "Line": "CD"},
+    {"MC ID": "IMM-250-147", "MC Number": "C2", "Line": "CD"},
+    {"MC ID": "IMM-250-21", "MC Number": "C3", "Line": "CD"},
+    {"MC ID": "IMM-250-121", "MC Number": "C4", "Line": "CD"},
+    {"MC ID": "IMM-250-123", "MC Number": "C5", "Line": "CD"},
+    {"MC ID": "IMM-250-67", "MC Number": "C6", "Line": "CD"},
+    {"MC ID": "IMM-120-88", "MC Number": "C7", "Line": "CD"},
+    {"MC ID": "IMM-250-125", "MC Number": "C8", "Line": "CD"},
+    {"MC ID": "IMM-120-58", "MC Number": "C9", "Line": "CD"},
+    {"MC ID": "IMM-160-56", "MC Number": "C10", "Line": "CD"},
+    {"MC ID": "IMM-120-31", "MC Number": "C11", "Line": "CD"},
+    {"MC ID": "IMM-160-55", "MC Number": "C12", "Line": "CD"},
+    {"MC ID": "IMM-250-120", "MC Number": "D1", "Line": "CD"},
+    {"MC ID": "IMM-250-126", "MC Number": "D2", "Line": "CD"},
+    {"MC ID": "IMM-250-124", "MC Number": "D3", "Line": "CD"},
+    {"MC ID": "IMM-250-122", "MC Number": "D4", "Line": "CD"},
+    {"MC ID": "IMM-250-172", "MC Number": "D5", "Line": "CD"},
+    {"MC ID": "IMM-90-5", "MC Number": "D6", "Line": "DE"},
+    {"MC ID": "IMM-250-175", "MC Number": "D7", "Line": "DE"},
+    {"MC ID": "IMM-250-79", "MC Number": "D8", "Line": "DE"},
+    {"MC ID": "IMM-160-34", "MC Number": "D9", "Line": "DE"},
+    {"MC ID": "IMM-160-35", "MC Number": "D10", "Line": "DE"},
+    {"MC ID": "IMM-120-85", "MC Number": "D11", "Line": "DE"},
+    {"MC ID": "IMM-160-42", "MC Number": "D12", "Line": "DE"},
+    {"MC ID": "IMM-250-180", "MC Number": "E1", "Line": "DE"},
+    {"MC ID": "IMM-250-179", "MC Number": "E2", "Line": "DE"},
+    {"MC ID": "IMM-250-131", "MC Number": "E3", "Line": "DE"},
+    {"MC ID": "IMM-250-151", "MC Number": "E4", "Line": "DE"},
+    {"MC ID": "IMM-250-157", "MC Number": "E5", "Line": "DE"},
+    {"MC ID": "IMM-90-2", "MC Number": "E6", "Line": "DE"},
+    {"MC ID": "IMM-90-1", "MC Number": "E7", "Line": "DE"},
+    {"MC ID": "IMM-160-69", "MC Number": "E8", "Line": "DE"},
+    {"MC ID": "IMM-250-138", "MC Number": "E9", "Line": "DE"},
+    {"MC ID": "IMM-250-6", "MC Number": "E10", "Line": "DE"},
+    {"MC ID": "IMM-160-68", "MC Number": "E11", "Line": "DE"},
+    {"MC ID": "IMM-160-71", "MC Number": "E12", "Line": "DE"},
+    {"MC ID": "IMM-250-286", "MC Number": "F1", "Line": "FG"},
+    {"MC ID": "IMM-250-97", "MC Number": "F2", "Line": "FG"},
+    {"MC ID": "IMM-250-14", "MC Number": "F3", "Line": "FG"},
+    {"MC ID": "IMM-250-60", "MC Number": "F4", "Line": "FG"},
+    {"MC ID": "IMM-260-2", "MC Number": "F5", "Line": "FG"},
+    {"MC ID": "IMM-250-18", "MC Number": "F6", "Line": "FG"},
+    {"MC ID": "IMM-250-15", "MC Number": "F7", "Line": "FG"},
+    {"MC ID": "IMM-250-16", "MC Number": "F8", "Line": "FG"},
+    {"MC ID": "IMM-250-208", "MC Number": "F9", "Line": "FG"},
+    {"MC ID": "IMM-160-70", "MC Number": "F10", "Line": "FG"},
+    {"MC ID": "IMM-160-85", "MC Number": "F11", "Line": "FG"},
+    {"MC ID": "IMM-250-47", "MC Number": "G1", "Line": "FG"},
+    {"MC ID": "IMM-250-74", "MC Number": "G2", "Line": "FG"},
+    {"MC ID": "IMM-160-73", "MC Number": "G3", "Line": "FG"},
+    {"MC ID": "IMM-160-78", "MC Number": "G4", "Line": "FG"},
+    {"MC ID": "IMM-250-284", "MC Number": "G5", "Line": "FG"},
+    {"MC ID": "IMM-160-81", "MC Number": "G6", "Line": "FG"},
+    {"MC ID": "IMM-160-72", "MC Number": "G7", "Line": "FG"},
+    {"MC ID": "IMM-160-77", "MC Number": "G8", "Line": "FG"}
+]
+df_mc_master = pd.DataFrame(MC_DATABASE)
+
+def parse_mc_wise_sheet(df_raw):
+    """Parses wide 'MC Wise' grid tab into a clean long format dataframe."""
+    records = []
+    cols = df_raw.columns
+    for i in range(4, len(cols), 2):
+        mc_id = cols[i]
+        if pd.isna(mc_id) or "Unnamed" in str(mc_id):
+            continue
+        mc_number = df_raw.iloc[0, i]
+        
+        for r in range(2, len(df_raw)):
+            cause = df_raw.iloc[r, 0]
+            if pd.isna(cause) or str(cause).strip().lower() == "total":
+                continue
+            entry = df_raw.iloc[r, i]
+            hr = df_raw.iloc[r, i+1]
+            try:
+                entry = float(entry) if not pd.isna(entry) else 0.0
+                hr = float(hr) if not pd.isna(hr) else 0.0
+            except:
+                entry, hr = 0.0, 0.0
+                
+            if hr > 0 or entry > 0:
+                records.append({
+                    'MC ID': str(mc_id).strip(),
+                    'MC Number': str(mc_number).strip(),
+                    'Cause': str(cause).strip(),
+                    'Entry': entry,
+                    'Hours': hr
+                })
+    df_long = pd.DataFrame(records)
+    if not df_long.empty:
+        df_long = df_long.merge(df_mc_master[['MC ID', 'Line']], on='MC ID', how='left')
+    return df_long
 
 # -----------------------------------------------------------------------------
 # MODULE 1: NPT ANALYSIS
 # -----------------------------------------------------------------------------
 if app_mode == "⏱️ NPT Analysis":
-    st.title("⏱️ Non-Productive Time (NPT) Analysis Dashboard")
+    st.title("⏱️ NPT Analysis Dashboard (MC Wise & Line Performance)")
     
     uploaded_file = st.sidebar.file_uploader(
         "Upload Daily NPT File (.xlsx or .csv)", 
@@ -29,180 +142,134 @@ if app_mode == "⏱️ NPT Analysis":
 
     if uploaded_file is not None:
         try:
+            df_parsed = pd.DataFrame()
+            
             if uploaded_file.name.endswith('.csv'):
-                df = pd.read_csv(uploaded_file)
-                df_mc_mapping = None
+                df_raw = pd.read_csv(uploaded_file)
+                df_parsed = df_raw
             else:
                 excel_file = pd.ExcelFile(uploaded_file)
                 sheet_names = excel_file.sheet_names
                 
-                # Load MC ID mapping tab automatically if available
-                if "MC ID" in sheet_names:
-                    df_mc_mapping = pd.read_excel(uploaded_file, sheet_name="MC ID")
+                # Check for MC Wise tab or raw Data tab
+                if "MC Wise" in sheet_names:
+                    df_mcwise_raw = pd.read_excel(uploaded_file, sheet_name="MC Wise")
+                    df_parsed = parse_mc_wise_sheet(df_mcwise_raw)
                 else:
-                    df_mc_mapping = None
+                    selected_sheet = st.sidebar.selectbox("Select Sheet/Tab to Analyze", sheet_names, index=0)
+                    df_raw = pd.read_excel(uploaded_file, sheet_name=selected_sheet)
+                    df_parsed = df_raw
 
-                selected_sheet = st.sidebar.selectbox("Select Sheet/Tab to Analyze", sheet_names, index=0)
-                df_raw = pd.read_excel(uploaded_file, sheet_name=selected_sheet)
-
-                if "Summary" in selected_sheet or "Mc Downtime Report" in str(df_raw.columns[0]):
-                    df = df_raw.copy()
-                    df.columns = df.iloc[0]
-                    df = df[1:].reset_index(drop=True)
-                    df = df.dropna(subset=["Cause"])
-                else:
-                    df = df_raw.copy()
-
-            # Column Standardization
-            column_mapping = {}
-            for col in df.columns:
-                str_col = str(col).strip().lower()
-                if str_col in ['cause', 'downtime cause', 'npt cause']:
-                    column_mapping[col] = 'Cause'
-                elif str_col in ['hr', 'total hours', 'duration (in second)']:
-                    column_mapping[col] = 'Hours'
-                elif str_col in ['entry', 'entries', 'incidents']:
-                    column_mapping[col] = 'Entry'
-                elif str_col in ['machine', 'mc id', 'machine id']:
-                    column_mapping[col] = 'MC ID'
-                elif str_col in ['machine no.', 'mc number', 'mc no', 'mc no.']:
-                    column_mapping[col] = 'MC Number'
-
-            df = df.rename(columns=column_mapping)
-
-            # Process MC ID and MC Number Mapping if Machine data is present
-            if 'MC ID' in df.columns or 'MC Number' in df.columns:
-                if df_mc_mapping is not None:
-                    # Merge with master MC ID sheet if missing one of the columns
-                    if 'MC ID' in df.columns and 'MC Number' not in df.columns:
-                        df = df.merge(df_mc_mapping, left_on='MC ID', right_on='MC ID', how='left')
-                    elif 'MC Number' in df.columns and 'MC ID' not in df.columns:
-                        df = df.merge(df_mc_mapping, left_on='MC Number', right_on='MC Number', how='left')
-                
-                # Reorder columns to display MC ID and MC Number side-by-side
-                cols = list(df.columns)
-                if 'MC ID' in cols and 'MC Number' in cols:
-                    cols.remove('MC ID')
-                    cols.remove('MC Number')
-                    df = df[['MC ID', 'MC Number'] + cols]
-
-            # Numeric Conversions
-            if 'Hours' in df.columns:
-                df['Hours'] = pd.to_numeric(df['Hours'], errors='coerce').fillna(0)
-            if 'Entry' in df.columns:
-                df['Entry'] = pd.to_numeric(df['Entry'], errors='coerce').fillna(0)
-
-            # Filter valid records
-            df_valid = df[df['Cause'].astype(str).str.lower() != 'nan'].copy()
-            if 'Hours' in df_valid.columns:
-                df_filtered = df_valid[df_valid['Hours'] > 0].sort_values(by='Hours', ascending=False)
-            else:
-                df_filtered = df_valid
-
-            # Metrics Row
-            st.subheader("📊 NPT Key Metrics")
-            m1, m2, m3 = st.columns(3)
+            # Ensure columns are normalized
+            if 'Machine' in df_parsed.columns and 'MC ID' not in df_parsed.columns:
+                df_parsed['MC ID'] = df_parsed['Machine']
             
-            total_npt = df_filtered['Hours'].sum() if 'Hours' in df_filtered.columns else 0
-            total_entries = df_filtered['Entry'].sum() if 'Entry' in df_filtered.columns else len(df_filtered)
-            top_cause = df_filtered.iloc[0]['Cause'] if not df_filtered.empty else "N/A"
+            if 'MC ID' in df_parsed.columns:
+                # Merge master MC ID & Line mappings
+                df_parsed = df_parsed.merge(df_mc_master, on='MC ID', how='left', suffixes=('', '_master'))
+                if 'MC Number_master' in df_parsed.columns:
+                    df_parsed['MC Number'] = df_parsed['MC Number_master']
+                if 'Line_master' in df_parsed.columns:
+                    df_parsed['Line'] = df_parsed['Line_master']
+
+            # Make sure numeric fields exist
+            if 'Hours' in df_parsed.columns:
+                df_parsed['Hours'] = pd.to_numeric(df_parsed['Hours'], errors='coerce').fillna(0)
+            elif 'HR' in df_parsed.columns:
+                df_parsed['Hours'] = pd.to_numeric(df_parsed['HR'], errors='coerce').fillna(0)
+
+            # Filter out zero hour entries
+            df_filtered = df_parsed[df_parsed['Hours'] > 0].copy()
+
+            # --- TOP 10 NPT SUMMARY TABLE (RANKED BY HOURS HIGHEST TO LOWEST) ---
+            st.subheader("🏆 Top 10 NPT Loss Summary Ranking (MC Wise)")
             
-            m1.metric("Total NPT Loss", f"{total_npt:.2f} Hours")
-            m2.metric("Total Downtime Incidents", f"{int(total_entries)}")
-            m3.metric("Top Downtime Cause", f"{top_cause}")
+            # Sort from highest to lowest hours
+            df_top10 = df_filtered.sort_values(by="Hours", ascending=False).head(10).copy()
+            
+            total_loss_hours = df_filtered['Hours'].sum()
+            df_top10['%'] = (df_top10['Hours'] / total_loss_hours * 100).map('{:.2f}%'.format) if total_loss_hours > 0 else "0.00%"
+            df_top10['Hours'] = df_top10['Hours'].round(2)
+
+            # Format final table columns
+            df_top10_table = df_top10.reset_index(drop=True)
+            df_top10_table.index = df_top10_table.index + 1
+            df_top10_table.index.name = "Rank"
+
+            display_cols = ['Cause', 'Hours', '%', 'MC Number', 'MC ID', 'Line']
+            avail_cols = [c for c in display_cols if c in df_top10_table.columns]
+
+            st.dataframe(df_top10_table[avail_cols], use_container_width=True)
 
             st.markdown("---")
 
-            # Top 10 Pareto Chart & Pie Chart
-            col1, col2 = st.columns([2, 1])
+            # --- SEPARATE ANALYSIS & GRAPH FOR DE LINE ---
+            st.header("⚡ DE Line NPT Dedicated Analysis")
+            st.caption("Machines: D6 to D12 (IMM-90-5 to IMM-160-42) & E1 to E12 (IMM-250-180 to IMM-160-71)")
 
-            with col1:
-                st.subheader("📈 Top 10 NPT Causes Breakdown")
-                df_top10 = df_filtered.head(10).copy()
-                if 'Hours' in df_top10.columns:
-                    fig = px.bar(
-                        df_top10,
-                        x='Cause',
+            df_de_line = df_filtered[df_filtered['Line'] == 'DE'].copy()
+
+            if not df_de_line.empty:
+                col_de1, col_de2 = st.columns([2, 1])
+
+                with col_de1:
+                    st.subheader("📊 DE Line NPT Loss by Machine Number")
+                    fig_de_bar = px.bar(
+                        df_de_line.groupby(['MC Number', 'Cause'])['Hours'].sum().reset_index(),
+                        x='MC Number',
                         y='Hours',
-                        color='Hours',
+                        color='Cause',
+                        title="DE Line NPT Loss Distribution across Machines (D6 - E12)",
                         text_auto='.1f',
-                        title='Top 10 NPT Downtime Drivers (Hours)',
-                        color_continuous_scale='Reds'
+                        barmode='stack'
                     )
-                    fig.update_layout(xaxis_tickangle=-45)
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig_de_bar, use_container_width=True)
 
-            with col2:
-                st.subheader("🥧 Top 5 Loss Contribution")
-                if 'Hours' in df_top10.columns:
-                    fig_pie = px.pie(
-                        df_top10.head(5),
+                with col_de2:
+                    st.subheader("🥧 DE Line Top Loss Causes")
+                    df_de_cause = df_de_line.groupby('Cause')['Hours'].sum().reset_index().sort_values(by='Hours', ascending=False)
+                    fig_de_pie = px.pie(
+                        df_de_cause.head(5),
                         names='Cause',
                         values='Hours',
-                        hole=0.4
+                        hole=0.4,
+                        title="DE Line Top Downtime Causes"
                     )
-                    st.plotly_chart(fig_pie, use_container_width=True)
+                    st.plotly_chart(fig_de_pie, use_container_width=True)
 
-            # Top 10 NPT Loss Summary Table with Explicit Ranking
-            st.subheader("🏆 Top 10 NPT Loss Summary Ranking")
-            
-            df_top10_table = df_filtered.head(10).copy().reset_index(drop=True)
-            df_top10_table.index = df_top10_table.index + 1  # 1-based index rank
-            df_top10_table.index.name = "Rank"
+                # DE Line Specific Summary Table
+                st.subheader("📋 DE Line NPT Incident Log Table")
+                df_de_summary = df_de_line.sort_values(by="Hours", ascending=False).reset_index(drop=True)
+                df_de_summary.index = df_de_summary.index + 1
+                df_de_summary.index.name = "Rank"
+                st.dataframe(df_de_summary[avail_cols], use_container_width=True)
 
-            st.dataframe(df_top10_table, use_container_width=True)
+            else:
+                st.warning("No DE Line NPT loss incidents detected in the uploaded file.")
 
         except Exception as e:
-            st.error(f"Error processing file: {e}")
-            st.info("Please verify the uploaded file format.")
+            st.error(f"Error parsing NPT file: {e}")
+            st.info("Make sure your Excel file contains 'MC Wise' or standard data columns.")
     else:
-        st.info("👈 Please upload an NPT file in the sidebar to begin analysis.")
+        st.info("👈 Upload your daily NPT Excel report in the sidebar to generate analysis.")
 
 # -----------------------------------------------------------------------------
-# MODULE 2: REJECTION ANALYSIS (Modular placeholder for expansion)
+# MODULE 2: REJECTION ANALYSIS
 # -----------------------------------------------------------------------------
 elif app_mode == "❌ Rejection Analysis":
-    st.title("❌ Quality & Rejection Analysis Dashboard")
-    uploaded_rejection_file = st.sidebar.file_uploader(
-        "Upload Rejection File (.xlsx or .csv)", 
-        type=["xlsx", "xls", "csv"],
-        key="rej_uploader"
-    )
-
-    if uploaded_rejection_file is not None:
-        df_rej = pd.read_excel(uploaded_rejection_file) if uploaded_rejection_file.name.endswith('.xlsx') else pd.read_csv(uploaded_rejection_file)
-        st.subheader("Rejection Data Preview")
-        st.dataframe(df_rej.head(), use_container_width=True)
-    else:
-        st.info("👈 Upload your Rejection Log File to view Quality Metrics.")
+    st.title("❌ Rejection & Scrap Analysis Module")
+    st.info("Upload Rejection log files here to analyze scrap rate and defect causes.")
 
 # -----------------------------------------------------------------------------
-# MODULE 3: PRODUCTION DATA (Modular placeholder for expansion)
+# MODULE 3: PRODUCTION DATA
 # -----------------------------------------------------------------------------
 elif app_mode == "🏭 Production Data":
-    st.title("🏭 Production Output & Efficiency Dashboard")
-    uploaded_prod_file = st.sidebar.file_uploader(
-        "Upload Production File (.xlsx or .csv)", 
-        type=["xlsx", "xls", "csv"],
-        key="prod_uploader"
-    )
-
-    if uploaded_prod_file is not None:
-        df_prod = pd.read_excel(uploaded_prod_file) if uploaded_prod_file.name.endswith('.xlsx') else pd.read_csv(uploaded_prod_file)
-        st.subheader("Production Data Preview")
-        st.dataframe(df_prod.head(), use_container_width=True)
-    else:
-        st.info("👈 Upload your Daily Production Report to track line output.")
+    st.title("🏭 Production Output Module")
+    st.info("Upload Production log files here to analyze hourly output and targets.")
 
 # -----------------------------------------------------------------------------
 # MODULE 4: MASTER SUMMARY
 # -----------------------------------------------------------------------------
 elif app_mode == "📊 Master Summary":
-    st.title("📊 Plant Executive Master Overview")
-    st.markdown("""
-    Welcome to the **DE Line Master Operations Center**. 
-    Select individual analysis modules from the left navigation panel to upload and evaluate:
-    * **⏱️ NPT Analysis:** Measure machine breakdowns, downtime causes, and top loss drivers.
-    * **❌ Rejection Analysis:** Monitor quality scrap rates, defect types, and part rejections.
-    * **🏭 Production Data:** Track target vs actual production volumes and line efficiency.
-    """)
+    st.title("📊 Master Executive Summary Dashboard")
+    st.markdown("Consolidated multi-file view across NPT, Quality, and Production.")
