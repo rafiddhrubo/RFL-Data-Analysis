@@ -118,13 +118,17 @@ df_mc_master = pd.DataFrame(MC_DATABASE)
 
 
 # -----------------------------------------------------------------------------
-# HELPER FUNCTIONS
+# HELPER FUNCTIONS (WITH PARSING FIXES)
 # -----------------------------------------------------------------------------
 def parse_raw_data_sheet(df_raw):
+  """Parses transaction-level 'Data' sheet with strict NPT event filtering."""
   df = df_raw.copy()
+
+  # Clean machine names
   if "Machine" in df.columns:
     df["MC ID"] = df["Machine"].astype(str).str.strip()
 
+  # Calculate hours cleanly
   if "Duration (In Second)" in df.columns:
     df["Hours"] = (
         pd.to_numeric(df["Duration (In Second)"], errors="coerce").fillna(0)
@@ -132,12 +136,23 @@ def parse_raw_data_sheet(df_raw):
     )
   elif "Hours" not in df.columns and "HR" in df.columns:
     df["Hours"] = pd.to_numeric(df["HR"], errors="coerce").fillna(0)
+  else:
+    df["Hours"] = 0.0
 
+  # Filter OUT zero-duration or non-downtime rows immediately
+  df = df[df["Hours"] > 0].copy()
+
+  # Filter out non-downtime machine statuses if the column exists
+  if "Status" in df.columns:
+    df = df[df["Status"].astype(str).str.upper() != "RUNNING"].copy()
+
+  # Standardize Cause field
   if "Cause" in df.columns:
     df["Cause"] = df["Cause"].fillna("Unspecified Cause").astype(str).str.strip()
   else:
     df["Cause"] = "Unspecified Cause"
 
+  # Process Date column
   date_col = None
   for col in ["From Time", "Added Date", "Date"]:
     if col in df.columns:
@@ -150,6 +165,7 @@ def parse_raw_data_sheet(df_raw):
   else:
     df["Date"] = "Unknown"
 
+  # Merge Machine details (Line & MC Number)
   df = df.merge(df_mc_master, on="MC ID", how="left", suffixes=("", "_master"))
   if "MC Number_master" in df.columns:
     df["MC Number"] = df["MC Number_master"]
@@ -161,6 +177,7 @@ def parse_raw_data_sheet(df_raw):
 
 
 def parse_mc_wise_sheet(df_raw):
+  """Parses wide 'MC Wise' grid tab into standard long format."""
   records = []
   cols = df_raw.columns
   for i in range(4, len(cols), 2):
@@ -181,7 +198,7 @@ def parse_mc_wise_sheet(df_raw):
       except:
         entry, hr = 0.0, 0.0
 
-      if hr > 0 or entry > 0:
+      if hr > 0:
         records.append({
             "MC ID": str(mc_id).strip(),
             "MC Number": str(mc_number).strip(),
@@ -199,6 +216,7 @@ def parse_mc_wise_sheet(df_raw):
 
 
 def generate_unique_mc_summary(df_input):
+  """Groups data strictly by Machine so each MC Number appears exactly ONCE."""
   results = []
   total_all_hrs = df_input["Hours"].sum()
 
@@ -284,8 +302,16 @@ if app_mode == "⏱️ NPT Analysis":
       if npt_view == "1. Summary":
         st.header("📊 NPT Overall Executive Summary")
         total_hours = df_filtered["Hours"].sum()
-        total_incidents = df_filtered["Entry"].sum() if "Entry" in df_filtered.columns else len(df_filtered)
-        affected_machines = df_filtered["MC ID"].nunique() if "MC ID" in df_filtered.columns else 0
+        total_incidents = (
+            df_filtered["Entry"].sum()
+            if "Entry" in df_filtered.columns
+            else len(df_filtered)
+        )
+        affected_machines = (
+            df_filtered["MC ID"].nunique()
+            if "MC ID" in df_filtered.columns
+            else 0
+        )
 
         kpi1, kpi2, kpi3 = st.columns(3)
         kpi1.metric("Total NPT Loss", f"{total_hours:.2f} Hrs")
@@ -296,19 +322,52 @@ if app_mode == "⏱️ NPT Analysis":
         col_sum1, col_sum2 = st.columns(2)
         with col_sum1:
           st.subheader("Top Downtime Causes (Overall)")
-          cause_summary = df_filtered.groupby("Cause")["Hours"].sum().reset_index().sort_values(by="Hours", ascending=False)
-          fig_cause = px.bar(cause_summary.head(10), x="Hours", y="Cause", orientation="h", color="Hours", color_continuous_scale="Reds", template="plotly_white")
-          fig_cause.update_layout(yaxis={"categoryorder": "total ascending"}, showlegend=False, margin=dict(l=20, r=20, t=40, b=20))
-          fig_cause.update_traces(texttemplate="%{x:.1f}h", textposition="outside")
+          cause_summary = (
+              df_filtered.groupby("Cause")["Hours"]
+              .sum()
+              .reset_index()
+              .sort_values(by="Hours", ascending=False)
+          )
+          fig_cause = px.bar(
+              cause_summary.head(10),
+              x="Hours",
+              y="Cause",
+              orientation="h",
+              color="Hours",
+              color_continuous_scale="Reds",
+              template="plotly_white",
+          )
+          fig_cause.update_layout(
+              yaxis={"categoryorder": "total ascending"},
+              showlegend=False,
+              margin=dict(l=20, r=20, t=40, b=20),
+          )
+          fig_cause.update_traces(
+              texttemplate="%{x:.1f}h", textposition="outside"
+          )
           st.plotly_chart(fig_cause, use_container_width=True)
 
         with col_sum2:
           st.subheader("NPT Distribution by Production Line")
           if "Line" in df_filtered.columns:
-            line_summary = df_filtered.groupby("Line")["Hours"].sum().reset_index()
-            fig_line = px.pie(line_summary, names="Line", values="Hours", hole=0.45, template="plotly_white", color_discrete_sequence=px.colors.qualitative.Set2)
-            fig_line.update_traces(textinfo="label+percent+value", texttemplate="%{label}<br>%{value:.1f}h (%{percent})")
-            fig_line.update_layout(margin=dict(l=20, r=20, t=40, b=20), showlegend=False)
+            line_summary = (
+                df_filtered.groupby("Line")["Hours"].sum().reset_index()
+            )
+            fig_line = px.pie(
+                line_summary,
+                names="Line",
+                values="Hours",
+                hole=0.45,
+                template="plotly_white",
+                color_discrete_sequence=px.colors.qualitative.Set2,
+            )
+            fig_line.update_traces(
+                textinfo="label+percent+value",
+                texttemplate="%{label}<br>%{value:.1f}h (%{percent})",
+            )
+            fig_line.update_layout(
+                margin=dict(l=20, r=20, t=40, b=20), showlegend=False
+            )
             st.plotly_chart(fig_line, use_container_width=True)
 
       # -----------------------------------------------------------------
@@ -316,61 +375,166 @@ if app_mode == "⏱️ NPT Analysis":
       # -----------------------------------------------------------------
       elif npt_view == "2. MC wise":
         st.header("⚙️ Machine-Wise Cumulative NPT Loss Analysis")
-        st.subheader("🏆 Table 1: Top 10 Machines with Maximum Downtime (Overall)")
+        st.subheader(
+            "🏆 Table 1: Top 10 Machines with Maximum Downtime (Overall)"
+        )
         df_overall_mc = generate_unique_mc_summary(df_filtered)
-        st.dataframe(df_overall_mc.head(10)[["MC Number", "MC ID", "Line", "Cumulative Hours", "%", "Primary Cause", "All Downtime Causes"]], use_container_width=True)
+        st.dataframe(
+            df_overall_mc.head(10)[[
+                "MC Number",
+                "MC ID",
+                "Line",
+                "Cumulative Hours",
+                "%",
+                "Primary Cause",
+                "All Downtime Causes",
+            ]],
+            use_container_width=True,
+        )
         st.markdown("---")
-        
-        st.subheader("🔍 Table 2: Line-Filtered Unique Machine Analysis")
-        available_lines = ["All Lines"] + sorted([str(x) for x in df_filtered["Line"].dropna().unique()])
-        selected_mc_line = st.selectbox("Select Line to filter machine breakdown:", options=available_lines, index=0)
 
-        df_selected_line = df_filtered.copy() if selected_mc_line == "All Lines" else df_filtered[df_filtered["Line"] == selected_mc_line].copy()
+        st.subheader("🔍 Table 2: Line-Filtered Unique Machine Analysis")
+        available_lines = ["All Lines"] + sorted(
+            [str(x) for x in df_filtered["Line"].dropna().unique()]
+        )
+        selected_mc_line = st.selectbox(
+            "Select Line to filter machine breakdown:",
+            options=available_lines,
+            index=0,
+        )
+
+        df_selected_line = (
+            df_filtered.copy()
+            if selected_mc_line == "All Lines"
+            else df_filtered[df_filtered["Line"] == selected_mc_line].copy()
+        )
 
         if not df_selected_line.empty:
           df_selected_mc_summary = generate_unique_mc_summary(df_selected_line)
-          st.dataframe(df_selected_mc_summary[["MC Number", "MC ID", "Line", "Cumulative Hours", "%", "Primary Cause", "All Downtime Causes"]], use_container_width=True)
-          
-          st.subheader(f"📊 {selected_mc_line} Machine Downtime Breakdown Chart")
-          chart_data = df_selected_line.groupby(["MC Number", "Cause"])["Hours"].sum().reset_index()
+          st.dataframe(
+              df_selected_mc_summary[[
+                  "MC Number",
+                  "MC ID",
+                  "Line",
+                  "Cumulative Hours",
+                  "%",
+                  "Primary Cause",
+                  "All Downtime Causes",
+              ]],
+              use_container_width=True,
+          )
+
+          st.subheader(
+              f"📊 {selected_mc_line} Machine Downtime Breakdown Chart"
+          )
+          chart_data = (
+              df_selected_line.groupby(["MC Number", "Cause"])["Hours"]
+              .sum()
+              .reset_index()
+          )
           mc_order = df_selected_mc_summary["MC Number"].tolist()
-          fig_selected_line_bar = px.bar(chart_data, x="MC Number", y="Hours", color="Cause", template="plotly_white", barmode="stack", category_orders={"MC Number": mc_order})
-          fig_selected_line_bar.update_layout(xaxis_title="Machine Number", yaxis_title="Downtime (Hours)", legend=dict(orientation="h", yanchor="top", y=-0.22, xanchor="left", x=0), margin=dict(l=20, r=20, t=50, b=120))
+          fig_selected_line_bar = px.bar(
+              chart_data,
+              x="MC Number",
+              y="Hours",
+              color="Cause",
+              template="plotly_white",
+              barmode="stack",
+              category_orders={"MC Number": mc_order},
+          )
+          fig_selected_line_bar.update_layout(
+              xaxis_title="Machine Number",
+              yaxis_title="Downtime (Hours)",
+              legend=dict(
+                  orientation="h",
+                  yanchor="top",
+                  y=-0.22,
+                  xanchor="left",
+                  x=0,
+              ),
+              margin=dict(l=20, r=20, t=50, b=120),
+          )
           st.plotly_chart(fig_selected_line_bar, use_container_width=True)
         else:
-          st.warning(f"No downtime records found for Line {selected_mc_line}.")
+          st.warning(
+              "No downtime records found for Line"
+              f" {selected_mc_line}."
+          )
 
       # -----------------------------------------------------------------
       # VIEW 3: LINE WISE
       # -----------------------------------------------------------------
       elif npt_view == "3. Line wise":
         st.header("🏭 Line-Wise NPT Breakdown")
-        selected_line = st.selectbox("Select Production Line to Analyze:", ["AB", "CD", "DE", "FG"])
-        df_line_filtered = df_filtered[df_filtered["Line"] == selected_line].copy()
+        selected_line = st.selectbox(
+            "Select Production Line to Analyze:", ["AB", "CD", "DE", "FG"]
+        )
+        df_line_filtered = df_filtered[
+            df_filtered["Line"] == selected_line
+        ].copy()
 
         if not df_line_filtered.empty:
           st.subheader(f"📍 Line {selected_line} Analysis Overview")
           l1, l2 = st.columns(2)
-          l1.metric(f"Total NPT Hours for Line {selected_line}", f"{df_line_filtered['Hours'].sum():.2f} Hrs")
-          l2.metric("Active Affected Machines", f"{df_line_filtered['MC ID'].nunique()}")
+          l1.metric(
+              f"Total NPT Hours for Line {selected_line}",
+              f"{df_line_filtered['Hours'].sum():.2f} Hrs",
+          )
+          l2.metric(
+              "Active Affected Machines",
+              f"{df_line_filtered['MC ID'].nunique()}",
+          )
           st.markdown("---")
-          
+
           c1, c2 = st.columns(2)
           with c1:
             st.subheader(f"Loss Hours by Machine ({selected_line})")
-            mc_line_agg = df_line_filtered.groupby("MC Number")["Hours"].sum().reset_index().sort_values(by="Hours", ascending=False)
-            fig_line_mc = px.bar(mc_line_agg, x="MC Number", y="Hours", color="Hours", color_continuous_scale="Teal", template="plotly_white")
+            mc_line_agg = (
+                df_line_filtered.groupby("MC Number")["Hours"]
+                .sum()
+                .reset_index()
+                .sort_values(by="Hours", ascending=False)
+            )
+            fig_line_mc = px.bar(
+                mc_line_agg,
+                x="MC Number",
+                y="Hours",
+                color="Hours",
+                color_continuous_scale="Teal",
+                template="plotly_white",
+            )
             st.plotly_chart(fig_line_mc, use_container_width=True)
 
           with c2:
             st.subheader(f"Top Loss Causes ({selected_line})")
-            cause_line_agg = df_line_filtered.groupby("Cause")["Hours"].sum().reset_index()
-            fig_line_causes = px.pie(cause_line_agg, names="Cause", values="Hours", hole=0.45, template="plotly_white")
+            cause_line_agg = (
+                df_line_filtered.groupby("Cause")["Hours"].sum().reset_index()
+            )
+            fig_line_causes = px.pie(
+                cause_line_agg,
+                names="Cause",
+                values="Hours",
+                hole=0.45,
+                template="plotly_white",
+            )
             st.plotly_chart(fig_line_causes, use_container_width=True)
 
-          st.subheader(f"📋 Line {selected_line} Unique Machine Ranking Table")
+          st.subheader(
+              f"📋 Line {selected_line} Unique Machine Ranking Table"
+          )
           df_line_mc_summary = generate_unique_mc_summary(df_line_filtered)
-          st.dataframe(df_line_mc_summary[["MC Number", "MC ID", "Line", "Cumulative Hours", "%", "Primary Cause", "All Downtime Causes"]], use_container_width=True)
+          st.dataframe(
+              df_line_mc_summary[[
+                  "MC Number",
+                  "MC ID",
+                  "Line",
+                  "Cumulative Hours",
+                  "%",
+                  "Primary Cause",
+                  "All Downtime Causes",
+              ]],
+              use_container_width=True,
+          )
         else:
           st.warning(f"No downtime data available for Line {selected_line}.")
 
@@ -380,73 +544,141 @@ if app_mode == "⏱️ NPT Analysis":
       elif npt_view == "4. Date wise":
         st.header("📅 Date-Wise NPT Trend & Comparison")
 
-        valid_dates = sorted([d for d in df_filtered["Date"].unique() if d != "Unknown"])
+        valid_dates = sorted(
+            [d for d in df_filtered["Date"].unique() if d != "Unknown"]
+        )
 
         if not valid_dates or valid_dates == ["Aggregated Data"]:
-          st.warning("⚠️ The dataset does not contain individual date timestamps. Please upload a file containing the detailed 'Data' sheet.")
+          st.warning(
+              "⚠️ The dataset does not contain individual date timestamps."
+              " Please upload a file containing the detailed 'Data' sheet."
+          )
         else:
           col_f1, col_f2 = st.columns(2)
-          
+
           with col_f1:
-            # New Line Selector for Date-wise View
-            available_lines = ["All Lines"] + sorted([str(x) for x in df_filtered["Line"].dropna().unique()])
-            # Default to DE line if available, otherwise first option
-            default_index = available_lines.index("DE") if "DE" in available_lines else 0
+            available_lines = ["All Lines"] + sorted(
+                [str(x) for x in df_filtered["Line"].dropna().unique()]
+            )
+            default_index = (
+                available_lines.index("DE") if "DE" in available_lines else 0
+            )
             selected_date_line = st.selectbox(
                 "Filter by Production Line:",
                 options=available_lines,
-                index=default_index
+                index=default_index,
             )
 
           with col_f2:
-            # Date Multi-Select Filter
             selected_dates = st.multiselect(
                 "Filter Dates for Analysis:",
                 options=valid_dates,
                 default=valid_dates,
             )
 
-          # Apply Both Filters
-          df_date_filtered = df_filtered[df_filtered["Date"].isin(selected_dates)].copy()
+          # Apply Line & Date Filters
+          df_date_filtered = df_filtered[
+              df_filtered["Date"].isin(selected_dates)
+          ].copy()
           if selected_date_line != "All Lines":
-              df_date_filtered = df_date_filtered[df_date_filtered["Line"] == selected_date_line]
+            df_date_filtered = df_date_filtered[
+                df_date_filtered["Line"] == selected_date_line
+            ]
 
           if not df_date_filtered.empty:
             st.subheader(f"📈 Daily Downtime Trend ({selected_date_line})")
-            daily_trend = df_date_filtered.groupby("Date")["Hours"].sum().reset_index()
+            daily_trend = (
+                df_date_filtered.groupby("Date")["Hours"].sum().reset_index()
+            )
             daily_trend["Date"] = daily_trend["Date"].astype(str)
 
-            fig_trend = px.line(daily_trend, x="Date", y="Hours", markers=True, template="plotly_white")
-            fig_trend.update_traces(line_color="#1E3A8A", line_width=3, marker_size=8, texttemplate="%{y:.1f}h", textposition="top center")
-            fig_trend.update_layout(xaxis_title="Date", yaxis_title="Downtime (Hours)")
+            fig_trend = px.line(
+                daily_trend,
+                x="Date",
+                y="Hours",
+                markers=True,
+                template="plotly_white",
+            )
+            fig_trend.update_traces(
+                line_color="#1E3A8A",
+                line_width=3,
+                marker_size=8,
+                texttemplate="%{y:.1f}h",
+                textposition="top center",
+            )
+            fig_trend.update_layout(
+                xaxis_title="Date", yaxis_title="Downtime (Hours)"
+            )
             st.plotly_chart(fig_trend, use_container_width=True)
 
             st.markdown("---")
 
-            st.subheader(f"📊 Daily Downtime Breakdown by Cause ({selected_date_line})")
-            date_cause_agg = df_date_filtered.groupby(["Date", "Cause"])["Hours"].sum().reset_index()
+            st.subheader(
+                f"📊 Daily Downtime Breakdown by Cause ({selected_date_line})"
+            )
+            date_cause_agg = (
+                df_date_filtered.groupby(["Date", "Cause"])["Hours"]
+                .sum()
+                .reset_index()
+            )
             date_cause_agg["Date"] = date_cause_agg["Date"].astype(str)
 
-            fig_date_cause = px.bar(date_cause_agg, x="Date", y="Hours", color="Cause", template="plotly_white", barmode="stack")
-            fig_date_cause.update_layout(xaxis_title="Date", yaxis_title="Downtime (Hours)", legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="left", x=0))
+            fig_date_cause = px.bar(
+                date_cause_agg,
+                x="Date",
+                y="Hours",
+                color="Cause",
+                template="plotly_white",
+                barmode="stack",
+            )
+            fig_date_cause.update_layout(
+                xaxis_title="Date",
+                yaxis_title="Downtime (Hours)",
+                legend=dict(
+                    orientation="h",
+                    yanchor="top",
+                    y=-0.2,
+                    xanchor="left",
+                    x=0,
+                ),
+            )
             st.plotly_chart(fig_date_cause, use_container_width=True)
 
             st.markdown("---")
 
-            st.subheader(f"📋 Comparative Date Pivot Table ({selected_date_line})")
-            date_pivot = pd.pivot_table(df_date_filtered, values="Hours", index=["Line", "MC Number"], columns="Date", aggfunc="sum", fill_value=0)
+            st.subheader(
+                f"📋 Comparative Date Pivot Table ({selected_date_line})"
+            )
+            date_pivot = pd.pivot_table(
+                df_date_filtered,
+                values="Hours",
+                index=["Line", "MC Number"],
+                columns="Date",
+                aggfunc="sum",
+                fill_value=0,
+            )
             date_pivot["Total Hours"] = date_pivot.sum(axis=1)
-            date_pivot = date_pivot.sort_values(by="Total Hours", ascending=False)
+            date_pivot = date_pivot.sort_values(
+                by="Total Hours", ascending=False
+            )
 
-            st.dataframe(date_pivot.style.format("{:.2f}"), use_container_width=True)
+            st.dataframe(
+                date_pivot.style.format("{:.2f}"), use_container_width=True
+            )
 
           else:
-            st.warning("No data found for the selected date range and line combination.")
+            st.warning(
+                "No data found for the selected date range and line"
+                " combination."
+            )
 
     except Exception as e:
       st.error(f"Error processing NPT file: {e}")
   else:
-    st.info("👈 Upload your daily NPT report in the sidebar to activate the analysis options.")
+    st.info(
+        "👈 Upload your daily NPT report in the sidebar to activate the"
+        " analysis options."
+    )
 
 # -----------------------------------------------------------------------------
 # MODULE 2, 3, 4 STUBS
