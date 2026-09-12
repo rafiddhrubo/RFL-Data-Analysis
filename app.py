@@ -128,13 +128,41 @@ def parse_mc_wise_sheet(df_raw):
         df_long = df_long.merge(df_mc_master[['MC ID', 'Line']], on='MC ID', how='left')
     return df_long
 
+def generate_unique_mc_summary(df_input):
+    """Groups data strictly by Machine so each MC Number appears exactly ONCE."""
+    results = []
+    total_all_hrs = df_input['Hours'].sum()
+    
+    for (mc_num, mc_id, line), group in df_input.groupby(['MC Number', 'MC ID', 'Line']):
+        tot_hrs = group['Hours'].sum()
+        # Find primary cause (highest loss hours for this machine)
+        sorted_group = group.sort_values(by='Hours', ascending=False)
+        top_cause = sorted_group.iloc[0]['Cause']
+        
+        # Combine all causes for full visibility
+        all_causes = ", ".join(sorted_group['Cause'].unique().tolist())
+        
+        results.append({
+            'MC Number': mc_num,
+            'MC ID': mc_id,
+            'Line': line,
+            'Cumulative Hours': round(tot_hrs, 2),
+            '%': f"{(tot_hrs / total_all_hrs * 100):.2f}%" if total_all_hrs > 0 else "0.00%",
+            'Primary Cause': top_cause,
+            'All Downtime Causes': all_causes
+        })
+    
+    res_df = pd.DataFrame(results).sort_values(by='Cumulative Hours', ascending=False).reset_index(drop=True)
+    res_df.index = res_df.index + 1
+    res_df.index.name = "Rank"
+    return res_df
+
 # -----------------------------------------------------------------------------
 # MODULE 1: NPT ANALYSIS
 # -----------------------------------------------------------------------------
 if app_mode == "⏱️ NPT Analysis":
     st.title("⏱️ Non-Productive Time (NPT) Analysis")
     
-    # File Uploader in Sidebar
     uploaded_file = st.sidebar.file_uploader(
         "Upload NPT Report (.xlsx or .csv)", 
         type=["xlsx", "xls", "csv"],
@@ -159,7 +187,6 @@ if app_mode == "⏱️ NPT Analysis":
                     df_raw = pd.read_excel(uploaded_file, sheet_name=selected_sheet)
                     df_parsed = df_raw
 
-            # Normalize column names & Map Master Details
             if 'Machine' in df_parsed.columns and 'MC ID' not in df_parsed.columns:
                 df_parsed['MC ID'] = df_parsed['Machine']
             
@@ -178,7 +205,6 @@ if app_mode == "⏱️ NPT Analysis":
             df_filtered = df_parsed[df_parsed['Hours'] > 0].copy()
 
             st.sidebar.markdown("---")
-            # Dropdown options for NPT sub-analysis
             npt_view = st.sidebar.selectbox(
                 "Select NPT View:",
                 ["1. Summary", "2. MC wise", "3. Line wise"]
@@ -232,46 +258,37 @@ if app_mode == "⏱️ NPT Analysis":
                         st.plotly_chart(fig_line, use_container_width=True)
 
             # -----------------------------------------------------------------
-            # VIEW 2: MC WISE (2 Dedicated Tables)
+            # VIEW 2: MC WISE (Unique Machine Rows & Cumulative Hours)
             # -----------------------------------------------------------------
             elif npt_view == "2. MC wise":
-                st.header("⚙️ Machine-Wise NPT Loss Analysis")
+                st.header("⚙️ Machine-Wise Cumulative NPT Loss Analysis")
+                st.caption("Each machine is listed exactly ONCE with its cumulative downtime hours and loss causes.")
+
+                # --- TABLE 1: OVERALL TOP 10 MACHINES BY MAXIMUM DOWNTIME ---
+                st.subheader("🏆 Table 1: Top 10 Machines with Maximum Downtime (Overall)")
                 
-                # --- TABLE 1: OVERALL TOP 10 NPT LOSS RANKING ---
-                st.subheader("🏆 Table 1: Top 10 NPT Loss Summary Ranking (Overall MC Wise)")
-                st.caption("Ranked by hours from highest to lowest.")
+                df_overall_mc = generate_unique_mc_summary(df_filtered)
+                df_top10_mc = df_overall_mc.head(10)
 
-                total_loss_hours = df_filtered['Hours'].sum()
-                df_top10 = df_filtered.sort_values(by="Hours", ascending=False).head(10).copy()
-                df_top10['%'] = (df_top10['Hours'] / total_loss_hours * 100).map('{:.2f}%'.format) if total_loss_hours > 0 else "0.00%"
-                df_top10['Hours'] = df_top10['Hours'].round(2)
-
-                df_top10_table = df_top10.reset_index(drop=True)
-                df_top10_table.index = df_top10_table.index + 1
-                df_top10_table.index.name = "Rank"
-
-                display_cols = ['Cause', 'Hours', '%', 'MC Number', 'MC ID', 'Line']
-                avail_cols = [c for c in display_cols if c in df_top10_table.columns]
-
-                st.dataframe(df_top10_table[avail_cols], use_container_width=True)
+                st.dataframe(
+                    df_top10_mc[['MC Number', 'MC ID', 'Line', 'Cumulative Hours', '%', 'Primary Cause', 'All Downtime Causes']], 
+                    use_container_width=True
+                )
 
                 st.markdown("---")
 
-                # --- TABLE 2: DEDICATED DE LINE TABLE ---
-                st.subheader("⚡ Table 2: Dedicated DE Line MC Wise NPT Analysis")
-                st.caption("Includes DE Line machines: D6–D12 (IMM-90-5 to IMM-160-42) & E1–E12 (IMM-250-180 to IMM-160-71)")
+                # --- TABLE 2: DEDICATED DE LINE MACHINE ANALYSIS ---
+                st.subheader("⚡ Table 2: Dedicated DE Line Machine Analysis")
+                st.caption("Machines: D6–D12 & E1–E12 (Each machine listed once with total downtime hours)")
 
                 df_de_line = df_filtered[df_filtered['Line'] == 'DE'].copy()
 
                 if not df_de_line.empty:
-                    df_de_line['%'] = (df_de_line['Hours'] / df_de_line['Hours'].sum() * 100).map('{:.2f}%'.format)
-                    df_de_line['Hours'] = df_de_line['Hours'].round(2)
-
-                    df_de_table = df_de_line.sort_values(by="Hours", ascending=False).reset_index(drop=True)
-                    df_de_table.index = df_de_table.index + 1
-                    df_de_table.index.name = "Rank"
-
-                    st.dataframe(df_de_table[avail_cols], use_container_width=True)
+                    df_de_mc_summary = generate_unique_mc_summary(df_de_line)
+                    st.dataframe(
+                        df_de_mc_summary[['MC Number', 'MC ID', 'Line', 'Cumulative Hours', '%', 'Primary Cause', 'All Downtime Causes']], 
+                        use_container_width=True
+                    )
 
                     # DE Line Graph
                     st.subheader("📊 DE Line Machine Downtime Breakdown Chart")
@@ -280,7 +297,7 @@ if app_mode == "⏱️ NPT Analysis":
                         x='MC Number',
                         y='Hours',
                         color='Cause',
-                        title="Downtime Hours per DE Line Machine",
+                        title="Cumulative Downtime Hours per DE Line Machine (D6 - E12)",
                         text_auto='.1f',
                         barmode='stack'
                     )
@@ -338,19 +355,13 @@ if app_mode == "⏱️ NPT Analysis":
                         )
                         st.plotly_chart(fig_line_causes, use_container_width=True)
 
-                    # Table for Selected Line
-                    st.subheader(f"📋 Line {selected_line} NPT Ranking Table")
-                    df_line_filtered['%'] = (df_line_filtered['Hours'] / total_line_hrs * 100).map('{:.2f}%'.format)
-                    df_line_filtered['Hours'] = df_line_filtered['Hours'].round(2)
-
-                    df_line_table = df_line_filtered.sort_values(by="Hours", ascending=False).reset_index(drop=True)
-                    df_line_table.index = df_line_table.index + 1
-                    df_line_table.index.name = "Rank"
-
-                    display_cols = ['Cause', 'Hours', '%', 'MC Number', 'MC ID', 'Line']
-                    avail_cols = [c for c in display_cols if c in df_line_table.columns]
-
-                    st.dataframe(df_line_table[avail_cols], use_container_width=True)
+                    # Table for Selected Line (Machine Cumulative View)
+                    st.subheader(f"📋 Line {selected_line} Unique Machine Ranking Table")
+                    df_line_mc_summary = generate_unique_mc_summary(df_line_filtered)
+                    st.dataframe(
+                        df_line_mc_summary[['MC Number', 'MC ID', 'Line', 'Cumulative Hours', '%', 'Primary Cause', 'All Downtime Causes']], 
+                        use_container_width=True
+                    )
 
                 else:
                     st.warning(f"No downtime data available for Line {selected_line}.")
