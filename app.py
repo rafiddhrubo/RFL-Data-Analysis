@@ -1,4 +1,12 @@
-# Dynamic Visual Stacked Bar Chart (Fixed Text Overlap)
+if not df_selected_line.empty:
+                    df_selected_mc_summary = generate_unique_mc_summary(df_selected_line)
+                    
+                    st.dataframe(
+                        df_selected_mc_summary[['MC Number', 'MC ID', 'Line', 'Cumulative Hours', '%', 'Primary Cause', 'All Downtime Causes']], 
+                        use_container_width=True
+                    )
+
+                    # Dynamic Visual Stacked Bar Chart (Fixed Text Overlap & Indentation)
                     st.subheader(f"📊 Line {selected_mc_line} Machine Downtime Breakdown Chart")
                     
                     chart_data = df_selected_line.groupby(['MC Number', 'Cause'])['Hours'].sum().reset_index()
@@ -31,12 +39,12 @@
                         legend=dict(
                             orientation="h",
                             yanchor="top",
-                            y=-0.2,  # Positioned cleanly below chart x-axis, OR keep at top with added margin
+                            y=-0.25,  # Moves legend cleanly below chart to eliminate header overlap
                             xanchor="left",
                             x=0,
                             font=dict(size=11)
                         ),
-                        margin=dict(l=20, r=20, t=80, b=120) # Added margin to prevent overlap
+                        margin=dict(l=20, r=20, t=60, b=120)
                     )
                     
                     # Clean inline text labels
@@ -49,3 +57,5 @@
                     )
                     
                     st.plotly_chart(fig_selected_line_bar, use_container_width=True)
+                else:
+                    st.warning(f"No downtime records found for Line {selected_mc_line} in the uploaded report.")
