@@ -3,7 +3,19 @@ import pandas as pd
 import plotly.express as px
 
 # Page Setup
-st.set_page_config(page_title="Operations Hub - Downtime & Performance", layout="wide")
+st.set_page_config(
+    page_title="Operations Hub - Downtime & Performance", 
+    page_icon="⚙️",
+    layout="wide"
+)
+
+# Custom Styling for Streamlit Elements
+st.markdown("""
+    <style>
+    .main .block-container { padding-top: 1.5rem; }
+    div[data-testid="stMetricValue"] { font-size: 28px; font-weight: bold; color: #1E3A8A; }
+    </style>
+""", unsafe_allow_html=True)
 
 # Master Navigation Bar
 st.sidebar.title("📌 Operations Hub")
@@ -219,7 +231,7 @@ if app_mode == "⏱️ NPT Analysis":
 
                 kpi1, kpi2, kpi3 = st.columns(3)
                 kpi1.metric("Total NPT Loss", f"{total_hours:.2f} Hrs")
-                kpi2.metric("Total Incidents", f"{int(total_incidents)}")
+                kpi2.metric("Total Downtime Events", f"{int(total_incidents)}")
                 kpi3.metric("Affected Machines", f"{affected_machines}")
 
                 st.markdown("---")
@@ -228,34 +240,55 @@ if app_mode == "⏱️ NPT Analysis":
                 with col_sum1:
                     st.subheader("Top Downtime Causes (Overall)")
                     cause_summary = df_filtered.groupby('Cause')['Hours'].sum().reset_index().sort_values(by='Hours', ascending=False)
+                    
                     fig_cause = px.bar(
                         cause_summary.head(10),
                         x='Hours',
                         y='Cause',
                         orientation='h',
-                        text_auto='.1f',
                         color='Hours',
                         color_continuous_scale='Reds',
-                        title="Top 10 NPT Causes by Hours"
+                        template='plotly_white',
+                        title="Top 10 Downtime Causes by Total Hours"
                     )
-                    fig_cause.update_layout(yaxis={'categoryorder': 'total ascending'})
+                    fig_cause.update_layout(
+                        yaxis={'categoryorder': 'total ascending'},
+                        xaxis_title="Downtime (Hours)",
+                        yaxis_title="",
+                        showlegend=False,
+                        margin=dict(l=20, r=20, t=40, b=20)
+                    )
+                    fig_cause.update_traces(
+                        texttemplate='%{x:.1f}h', 
+                        textposition='outside',
+                        cliponaxis=False
+                    )
                     st.plotly_chart(fig_cause, use_container_width=True)
 
                 with col_sum2:
                     st.subheader("NPT Distribution by Production Line")
                     if 'Line' in df_filtered.columns:
                         line_summary = df_filtered.groupby('Line')['Hours'].sum().reset_index()
+                        
                         fig_line = px.pie(
                             line_summary,
                             names='Line',
                             values='Hours',
-                            hole=0.4,
-                            title="Total Hours Lost per Line"
+                            hole=0.45,
+                            template='plotly_white',
+                            color_discrete_sequence=px.colors.qualitative.Set2,
+                            title="NPT Share per Production Line"
                         )
+                        fig_line.update_traces(
+                            textinfo='label+percent+value',
+                            texttemplate='%{label}<br>%{value:.1f}h (%{percent})',
+                            marker=dict(line=dict(color='#FFFFFF', width=2))
+                        )
+                        fig_line.update_layout(margin=dict(l=20, r=20, t=40, b=20), showlegend=False)
                         st.plotly_chart(fig_line, use_container_width=True)
 
             # -----------------------------------------------------------------
-            # VIEW 2: MC WISE (With Dynamic Line Selector Option)
+            # VIEW 2: MC WISE (Dynamic Line Selection & Clean Visuals)
             # -----------------------------------------------------------------
             elif npt_view == "2. MC wise":
                 st.header("⚙️ Machine-Wise Cumulative NPT Loss Analysis")
@@ -277,7 +310,6 @@ if app_mode == "⏱️ NPT Analysis":
                 # --- DYNAMIC LINE SELECTION & TABLE 2 ---
                 st.subheader("🔍 Table 2: Line-Filtered Unique Machine Analysis")
                 
-                # Available lines dynamically identified + 'All Lines' option
                 available_lines = ["All Lines"] + sorted([str(x) for x in df_filtered['Line'].dropna().unique()])
                 
                 selected_mc_line = st.selectbox(
@@ -289,7 +321,7 @@ if app_mode == "⏱️ NPT Analysis":
 
                 if selected_mc_line == "All Lines":
                     df_selected_line = df_filtered.copy()
-                    st.caption(f"Displaying unique machine breakdown for **All Production Lines**")
+                    st.caption("Displaying unique machine breakdown for **All Production Lines**")
                 else:
                     df_selected_line = df_filtered[df_filtered['Line'] == selected_mc_line].copy()
                     st.caption(f"Displaying unique machine breakdown specifically for **Line {selected_mc_line}**")
@@ -302,17 +334,39 @@ if app_mode == "⏱️ NPT Analysis":
                         use_container_width=True
                     )
 
-                    # Dynamic Stacked Downtime Chart for Selected Line
+                    # Dynamic Visual Stacked Bar Chart
                     st.subheader(f"📊 Line {selected_mc_line} Machine Downtime Breakdown Chart")
+                    
+                    chart_data = df_selected_line.groupby(['MC Number', 'Cause'])['Hours'].sum().reset_index()
+                    mc_order = df_selected_mc_summary['MC Number'].tolist()
+                    
                     fig_selected_line_bar = px.bar(
-                        df_selected_line.groupby(['MC Number', 'Cause'])['Hours'].sum().reset_index(),
+                        chart_data,
                         x='MC Number',
                         y='Hours',
                         color='Cause',
-                        title=f"Cumulative Downtime Hours per Machine ({selected_mc_line} Line)",
-                        text_auto='.1f',
-                        barmode='stack'
+                        title=f"Cumulative Downtime Breakdown by Machine ({selected_mc_line} Line)",
+                        template='plotly_white',
+                        color_discrete_sequence=px.colors.qualitative.Pastel,
+                        barmode='stack',
+                        category_orders={'MC Number': mc_order}
                     )
+                    
+                    fig_selected_line_bar.update_layout(
+                        xaxis_title="Machine Number",
+                        yaxis_title="Downtime (Hours)",
+                        legend_title_text="Downtime Cause",
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                        margin=dict(l=20, r=20, t=60, b=20)
+                    )
+                    
+                    fig_selected_line_bar.update_traces(
+                        texttemplate='%{y:.1f}h',
+                        textposition='inside',
+                        marker_line_color='#FFFFFF',
+                        marker_line_width=1
+                    )
+                    
                     st.plotly_chart(fig_selected_line_bar, use_container_width=True)
                 else:
                     st.warning(f"No downtime records found for Line {selected_mc_line} in the uploaded report.")
@@ -345,26 +399,51 @@ if app_mode == "⏱️ NPT Analysis":
                     c1, c2 = st.columns(2)
                     with c1:
                         st.subheader(f"Loss Hours by Machine ({selected_line} Line)")
+                        
+                        mc_line_agg = df_line_filtered.groupby('MC Number')['Hours'].sum().reset_index().sort_values(by='Hours', ascending=False)
+                        
                         fig_line_mc = px.bar(
-                            df_line_filtered.groupby('MC Number')['Hours'].sum().reset_index().sort_values(by='Hours', ascending=False),
+                            mc_line_agg,
                             x='MC Number',
                             y='Hours',
                             color='Hours',
-                            color_continuous_scale='Oranges',
-                            text_auto='.1f',
-                            title=f"Machine Breakdown for Line {selected_line}"
+                            color_continuous_scale='Teal',
+                            template='plotly_white',
+                            title=f"Machine Downtime Ranking (Line {selected_line})"
+                        )
+                        fig_line_mc.update_layout(
+                            xaxis_title="Machine Number",
+                            yaxis_title="Downtime (Hours)",
+                            showlegend=False,
+                            margin=dict(l=20, r=20, t=40, b=20)
+                        )
+                        fig_line_mc.update_traces(
+                            texttemplate='%{y:.1f}h',
+                            textposition='outside',
+                            cliponaxis=False
                         )
                         st.plotly_chart(fig_line_mc, use_container_width=True)
 
                     with c2:
                         st.subheader(f"Top Loss Causes ({selected_line} Line)")
+                        
+                        cause_line_agg = df_line_filtered.groupby('Cause')['Hours'].sum().reset_index()
+                        
                         fig_line_causes = px.pie(
-                            df_line_filtered.groupby('Cause')['Hours'].sum().reset_index(),
+                            cause_line_agg,
                             names='Cause',
                             values='Hours',
-                            hole=0.4,
-                            title=f"Causes Distribution in Line {selected_line}"
+                            hole=0.45,
+                            template='plotly_white',
+                            color_discrete_sequence=px.colors.qualitative.Set3,
+                            title=f"Causes Share (Line {selected_line})"
                         )
+                        fig_line_causes.update_traces(
+                            textinfo='label+percent',
+                            texttemplate='%{label}<br>%{percent}',
+                            marker=dict(line=dict(color='#FFFFFF', width=2))
+                        )
+                        fig_line_causes.update_layout(margin=dict(l=20, r=20, t=40, b=20), showlegend=False)
                         st.plotly_chart(fig_line_causes, use_container_width=True)
 
                     st.subheader(f"📋 Line {selected_line} Unique Machine Ranking Table")
