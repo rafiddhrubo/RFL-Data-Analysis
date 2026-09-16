@@ -654,7 +654,7 @@ if app_mode == "⏱️ NPT Analysis":
             # VIEW 4: DATE WISE (DE LINE SPECIFIC)
             # -----------------------------------------------------------------
             elif npt_view == "4. Date wise":
-                st.header("📅 Date-Wise Loss Hours & Causes (DE Line)")
+                st.header("📅 Date-Wise NPT Breakdown & Root Causes (DE Line)")
 
                 # Strictly filter for DE Line first
                 df_de_line = df_filtered[df_filtered["Line"] == "DE"].copy()
@@ -689,37 +689,57 @@ if app_mode == "⏱️ NPT Analysis":
                     if not df_de_date_filtered.empty:
                         st.markdown("---")
 
-                        # Graph 1: Date vs Loss Hours (Line Trend Chart)
-                        daily_de_trend = (
-                            df_de_date_filtered.groupby(
-                                df_de_date_filtered["Date"].dt.strftime("%Y-%m-%d")
-                            )["Hours"]
+                        # Format date for cleaner display on x-axis
+                        df_de_date_filtered["Date_Str"] = df_de_date_filtered["Date"].dt.strftime("%Y-%m-%d")
+
+                        # Aggregation for Date + Cause breakdown
+                        daily_cause_breakdown = (
+                            df_de_date_filtered.groupby(["Date_Str", "Cause"])["Hours"]
                             .sum()
                             .reset_index()
                         )
 
-                        fig_de_trend = px.line(
-                            daily_de_trend,
-                            x="Date",
+                        # Graph 1: Stacked Bar Chart (Date vs Loss Hours by Reason)
+                        fig_stacked_date = px.bar(
+                            daily_cause_breakdown,
+                            x="Date_Str",
                             y="Hours",
-                            markers=True,
+                            color="Cause",
+                            title="Daily Downtime Breakdown by Reason (DE Line)",
+                            labels={"Hours": "Loss Hours", "Date_Str": "Date", "Cause": "Downtime Reason"},
                             template="plotly_white",
-                            title="DE Line: Date vs Loss Hours",
-                            labels={"Hours": "Loss Hours", "Date": "Date"},
+                            color_discrete_sequence=px.colors.qualitative.Spectral,
+                            barmode="stack",
                         )
-                        fig_de_trend.update_traces(
-                            line_color="#1E3A8A", line_width=3, marker_size=8
-                        )
-                        fig_de_trend.update_layout(
+
+                        fig_stacked_date.update_layout(
                             xaxis_title="Date",
-                            yaxis_title="Total Loss Hours",
-                            margin=dict(l=20, r=20, t=40, b=20),
+                            yaxis_title="Loss Hours",
+                            legend_title_text="Downtime Cause:",
+                            legend=dict(
+                                orientation="h",
+                                yanchor="top",
+                                y=-0.25,
+                                xanchor="left",
+                                x=0,
+                                font=dict(size=11),
+                            ),
+                            margin=dict(l=20, r=20, t=50, b=120),
                         )
-                        st.plotly_chart(fig_de_trend, use_container_width=True)
+
+                        fig_stacked_date.update_traces(
+                            texttemplate="%{y:.1f}h",
+                            textposition="inside",
+                            insidetextanchor="middle",
+                            marker_line_color="#FFFFFF",
+                            marker_line_width=1,
+                        )
+
+                        st.plotly_chart(fig_stacked_date, use_container_width=True)
 
                         st.markdown("---")
 
-                        # Graph 2: Reasons of Loss Hours (Bar Chart)
+                        # Graph 2: Total Loss Hours by Reason/Cause (Horizontal Bar Chart)
                         de_cause_summary = (
                             df_de_date_filtered.groupby("Cause")["Hours"]
                             .sum()
@@ -735,7 +755,7 @@ if app_mode == "⏱️ NPT Analysis":
                             color="Hours",
                             color_continuous_scale="Reds",
                             template="plotly_white",
-                            title="DE Line: Loss Hours by Reason / Cause",
+                            title="DE Line: Cumulative Loss Hours by Reason / Cause",
                             labels={"Hours": "Loss Hours", "Cause": "Downtime Reason"},
                         )
                         fig_de_cause_bar.update_layout(
