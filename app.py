@@ -787,3 +787,115 @@ elif app_mode == "🏭 Production Data":
 
 elif app_mode == "📊 Master Summary":
     st.title("📊 Master Executive Summary Dashboard")
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+
+# ---------------------------------------------------------
+# 1. Line Selection & Date-wise Filter UI
+# ---------------------------------------------------------
+st.sidebar.header("Date-wise Line Filter")
+
+# Get unique lines available in dataset
+available_lines = sorted(df_filtered["Line"].dropna().unique().tolist())
+
+selected_line = st.sidebar.selectbox(
+    "Select Line:",
+    options=["All Lines"] + available_lines,
+    index=0 if "DE" not in available_lines else available_lines.index("DE") + 1,
+)
+
+# Date Range Selection
+min_date = df_filtered["Date"].min()
+max_date = df_filtered["Date"].max()
+
+date_range = st.sidebar.date_input(
+    "Select Date Range:",
+    value=(min_date, max_date),
+    min_value=min_date,
+    max_value=max_date,
+)
+
+# Filter Dataset based on selections
+df_line_date = df_filtered.copy()
+
+if selected_line != "All Lines":
+    df_line_date = df_line_date[df_line_date["Line"] == selected_line]
+
+if len(date_range) == 2:
+    start_date, end_date = date_range
+    df_line_date = df_line_date[
+        (df_line_date["Date"] >= start_date) & (df_line_date["Date"] <= end_date)
+    ]
+
+# ---------------------------------------------------------
+# 2. Daily Comparison Visualizations & Metrics
+# ---------------------------------------------------------
+st.markdown(f"## Date-wise NPT Performance: **{selected_line}**")
+
+# Group data by Date and Machine / Cause for side-by-side comparison
+daily_summary = (
+    df_line_date.groupby(["Date", "MC Number", "Cause"])["Hours"]
+    .sum()
+    .reset_index()
+)
+
+daily_total = (
+    df_line_date.groupby("Date")[["Hours", "Entry"]].sum().reset_index()
+)
+
+# Key Summary Metrics
+col1, col2, col3 = st.columns(3)
+col1.metric("Selected Line", selected_line)
+col2.metric("Total Line Loss (Hrs)", f"{daily_total['Hours'].sum():.2f} hrs")
+col3.metric("Total Events", int(daily_total["Entry"].sum()))
+
+st.markdown("---")
+
+# Chart 1: Daily Total NPT Trend Comparison
+fig_daily_trend = px.bar(
+    daily_summary,
+    x="Date",
+    y="Hours",
+    color="MC Number",
+    title=f"Daily NPT Breakdown by Machine ({selected_line})",
+    labels={"Hours": "Loss Hours", "Date": "Date", "MC Number": "Machine"},
+    barmode="stack",
+    template="plotly_white",
+)
+st.plotly_chart(fig_daily_trend, use_container_width=True)
+
+# Chart 2: Cause Distribution Across Dates
+fig_cause_trend = px.bar(
+    daily_summary,
+    x="Date",
+    y="Hours",
+    color="Cause",
+    title=f"Daily NPT Breakdown by Loss Cause ({selected_line})",
+    labels={"Hours": "Loss Hours", "Date": "Date"},
+    barmode="group",
+    template="plotly_white",
+)
+st.plotly_chart(fig_cause_trend, use_container_width=True)
+
+# ---------------------------------------------------------
+# 3. Pivot Table View: Machine vs Date Matrix
+# ---------------------------------------------------------
+st.markdown("### Date vs Machine Comparison Pivot Table (Hours)")
+
+pivot_matrix = pd.pivot_table(
+    df_line_date,
+    values="Hours",
+    index=["MC Number", "MC ID"],
+    columns="Date",
+    aggfunc="sum",
+    fill_value=0,
+)
+
+# Highlight max values in table
+st.dataframe(
+    pivot_matrix.style.highlight_max(axis=0, color="#ffcdd2").format(
+        "{:.2f}"
+    ),
+    use_container_width=True,
+)
