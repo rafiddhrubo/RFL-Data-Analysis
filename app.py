@@ -708,7 +708,7 @@ if app_mode == "⏱️ NPT Analysis":
                             title="Daily Downtime Breakdown by Reason (DE Line)",
                             labels={"Hours": "Loss Hours", "Date_Str": "Date", "Cause": "Downtime Reason"},
                             template="plotly_white",
-                            color_discrete_sequence=px.colors.qualitative.Spectral,
+                            color_discrete_sequence=px.colors.qualitative.Plotly,
                             barmode="stack",
                         )
 
