@@ -159,6 +159,37 @@ def parse_mc_wise_sheet(df_raw):
     return df_long
 
 
+def parse_data_sheet(df_raw):
+    """Parses row-by-row transaction log 'Data' tab to extract dates and durations."""
+    df_data = df_raw.dropna(subset=["Machine", "Cause"]).copy()
+
+    # Extract or calculate Hours
+    if "Duration (In Second)" in df_data.columns:
+        df_data["Hours"] = (
+            pd.to_numeric(df_data["Duration (In Second)"], errors="coerce")
+            / 3600.0
+        )
+    elif "Duration" in df_data.columns:
+        df_data["Hours"] = pd.to_timedelta(
+            df_data["Duration"].astype(str), errors="coerce"
+        ).dt.total_seconds() / 3600.0
+
+    # Parse Date column
+    if "From Time" in df_data.columns:
+        df_data["Date"] = pd.to_datetime(
+            df_data["From Time"], errors="coerce"
+        ).dt.date
+    elif "Added Date" in df_data.columns:
+        df_data["Date"] = pd.to_datetime(
+            df_data["Added Date"], errors="coerce"
+        ).dt.date
+
+    df_data["MC ID"] = df_data["Machine"].astype(str).str.strip()
+    df_data["Entry"] = 1.0
+
+    return df_data
+
+
 def generate_unique_mc_summary(df_input):
     """Groups data strictly by Machine so each MC Number appears exactly ONCE."""
     results = []
@@ -218,7 +249,10 @@ if app_mode == "⏱️ NPT Analysis":
                 excel_file = pd.ExcelFile(uploaded_file)
                 sheet_names = excel_file.sheet_names
 
-                if "MC Wise" in sheet_names:
+                if "Data" in sheet_names:
+                    df_data_raw = pd.read_excel(uploaded_file, sheet_name="Data")
+                    df_parsed = parse_data_sheet(df_data_raw)
+                elif "MC Wise" in sheet_names:
                     df_mcwise_raw = pd.read_excel(
                         uploaded_file, sheet_name="MC Wise"
                     )
@@ -232,10 +266,7 @@ if app_mode == "⏱️ NPT Analysis":
                     )
                     df_parsed = df_raw
 
-            if (
-                "Machine" in df_parsed.columns
-                and "MC ID" not in df_parsed.columns
-            ):
+            if "Machine" in df_parsed.columns and "MC ID" not in df_parsed.columns:
                 df_parsed["MC ID"] = df_parsed["Machine"]
 
             if "MC ID" in df_parsed.columns:
@@ -263,7 +294,8 @@ if app_mode == "⏱️ NPT Analysis":
 
             st.sidebar.markdown("---")
             npt_view = st.sidebar.selectbox(
-                "Select NPT View:", ["1. Summary", "2. MC wise", "3. Line wise"]
+                "Select NPT View:",
+                ["1. Summary", "2. MC wise", "3. Line wise", "4. Date wise"],
             )
 
             # -----------------------------------------------------------------
@@ -618,10 +650,126 @@ if app_mode == "⏱️ NPT Analysis":
                         f"No downtime data available for Line {selected_line}."
                     )
 
+            # -----------------------------------------------------------------
+            # VIEW 4: DATE WISE
+            # -----------------------------------------------------------------
+            elif npt_view == "4. Date wise":
+                st.header("📅 Date-Wise NPT Trend & Breakdown")
+
+                if "Date" in df_filtered.columns and df_filtered["Date"].notna().any():
+                    df_date_valid = df_filtered[df_filtered["Date"].notna()].copy()
+                    df_date_valid["Date"] = pd.to_datetime(df_date_valid["Date"])
+
+                    min_date = df_date_valid["Date"].min().date()
+                    max_date = df_date_valid["Date"].max().date()
+
+                    col_d1, col_d2 = st.columns(2)
+                    with col_d1:
+                        date_range = st.date_input(
+                            "Select Date Range:",
+                            value=(min_date, max_date),
+                            min_value=min_date,
+                            max_value=max_date,
+                        )
+
+                    if isinstance(date_range, tuple) and len(date_range) == 2:
+                        start_d, end_d = date_range
+                        df_date_filtered = df_date_valid[
+                            (df_date_valid["Date"].dt.date >= start_d)
+                            & (df_date_valid["Date"].dt.date <= end_d)
+                        ]
+                    else:
+                        df_date_filtered = df_date_valid.copy()
+
+                    # Daily Trend Chart
+                    daily_trend = (
+                        df_date_filtered.groupby(df_date_filtered["Date"].dt.strftime("%Y-%m-%d"))["Hours"]
+                        .sum()
+                        .reset_index()
+                    )
+
+                    fig_date_trend = px.line(
+                        daily_trend,
+                        x="Date",
+                        y="Hours",
+                        markers=True,
+                        template="plotly_white",
+                        title="Daily Total NPT Trend (Hours)",
+                        labels={"Hours": "Downtime (Hours)", "Date": "Date"},
+                    )
+                    fig_date_trend.update_traces(
+                        line_color="#1E3A8A", line_width=3, marker_size=8
+                    )
+                    st.plotly_chart(fig_date_trend, use_container_width=True)
+
+                    st.markdown("---")
+
+                    col_chart1, col_chart2 = st.columns(2)
+                    with col_chart1:
+                        st.subheader("Daily Downtime by Line")
+                        daily_line = (
+                            df_date_filtered.groupby([df_date_filtered["Date"].dt.strftime("%Y-%m-%d"), "Line"])["Hours"]
+                            .sum()
+                            .reset_index()
+                        )
+                        fig_daily_line = px.bar(
+                            daily_line,
+                            x="Date",
+                            y="Hours",
+                            color="Line",
+                            barmode="stack",
+                            template="plotly_white",
+                            title="Daily NPT Loss by Line",
+                        )
+                        st.plotly_chart(fig_daily_line, use_container_width=True)
+
+                    with col_chart2:
+                        st.subheader("Daily Downtime by Primary Causes")
+                        daily_cause = (
+                            df_date_filtered.groupby([df_date_filtered["Date"].dt.strftime("%Y-%m-%d"), "Cause"])["Hours"]
+                            .sum()
+                            .reset_index()
+                        )
+                        fig_daily_cause = px.bar(
+                            daily_cause,
+                            x="Date",
+                            y="Hours",
+                            color="Cause",
+                            barmode="stack",
+                            template="plotly_white",
+                            title="Daily NPT Loss by Cause",
+                        )
+                        st.plotly_chart(fig_daily_cause, use_container_width=True)
+
+                    # Date Summary Table
+                    st.subheader("📋 Date-Wise Summary Table")
+                    date_table = (
+                        df_date_filtered.groupby(df_date_filtered["Date"].dt.strftime("%Y-%m-%d"))
+                        .agg(
+                            Total_Hours=("Hours", "sum"),
+                            Incident_Count=("Entry", "count"),
+                            Affected_Machines=("MC ID", "nunique"),
+                        )
+                        .reset_index()
+                        .rename(columns={
+                            "Date": "Date",
+                            "Total_Hours": "Total Downtime (Hrs)",
+                            "Incident_Count": "Total Events",
+                            "Affected_Machines": "Affected Machines"
+                        })
+                    )
+                    date_table["Total Downtime (Hrs)"] = date_table["Total Downtime (Hrs)"].round(2)
+                    st.dataframe(date_table, use_container_width=True)
+
+                else:
+                    st.warning(
+                        "The current report data format does not contain date timestamps required for Date-Wise view. Ensure the uploaded Excel contains the 'Data' tab with date logs."
+                    )
+
         except Exception as e:
             st.error(f"Error processing NPT file: {e}")
             st.info(
-                "Ensure that your uploaded file has valid data or the 'MC Wise' tab."
+                "Ensure that your uploaded file has valid data or the 'MC Wise' / 'Data' tab."
             )
     else:
         st.info(
