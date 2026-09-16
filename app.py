@@ -651,22 +651,27 @@ if app_mode == "⏱️ NPT Analysis":
                     )
 
             # -----------------------------------------------------------------
-            # VIEW 4: DATE WISE
+            # VIEW 4: DATE WISE (DE LINE SPECIFIC)
             # -----------------------------------------------------------------
             elif npt_view == "4. Date wise":
-                st.header("📅 Date-Wise NPT Trend & Breakdown")
+                st.header("📅 Date-Wise Loss Hours & Causes (DE Line)")
 
-                if "Date" in df_filtered.columns and df_filtered["Date"].notna().any():
-                    df_date_valid = df_filtered[df_filtered["Date"].notna()].copy()
-                    df_date_valid["Date"] = pd.to_datetime(df_date_valid["Date"])
+                # Strictly filter for DE Line first
+                df_de_line = df_filtered[df_filtered["Line"] == "DE"].copy()
 
-                    min_date = df_date_valid["Date"].min().date()
-                    max_date = df_date_valid["Date"].max().date()
+                if df_de_line.empty:
+                    st.warning("No downtime data found for DE Line in the uploaded report.")
+                elif "Date" in df_de_line.columns and df_de_line["Date"].notna().any():
+                    df_de_valid = df_de_line[df_de_line["Date"].notna()].copy()
+                    df_de_valid["Date"] = pd.to_datetime(df_de_valid["Date"])
 
-                    col_d1, col_d2 = st.columns(2)
+                    min_date = df_de_valid["Date"].min().date()
+                    max_date = df_de_valid["Date"].max().date()
+
+                    col_d1, _ = st.columns(2)
                     with col_d1:
                         date_range = st.date_input(
-                            "Select Date Range:",
+                            "Select Date Range (DE Line):",
                             value=(min_date, max_date),
                             min_value=min_date,
                             max_value=max_date,
@@ -674,228 +679,94 @@ if app_mode == "⏱️ NPT Analysis":
 
                     if isinstance(date_range, tuple) and len(date_range) == 2:
                         start_d, end_d = date_range
-                        df_date_filtered = df_date_valid[
-                            (df_date_valid["Date"].dt.date >= start_d)
-                            & (df_date_valid["Date"].dt.date <= end_d)
+                        df_de_date_filtered = df_de_valid[
+                            (df_de_valid["Date"].dt.date >= start_d)
+                            & (df_de_valid["Date"].dt.date <= end_d)
                         ]
                     else:
-                        df_date_filtered = df_date_valid.copy()
+                        df_de_date_filtered = df_de_valid.copy()
 
-                    # Daily Trend Chart
-                    daily_trend = (
-                        df_date_filtered.groupby(df_date_filtered["Date"].dt.strftime("%Y-%m-%d"))["Hours"]
-                        .sum()
-                        .reset_index()
-                    )
+                    if not df_de_date_filtered.empty:
+                        st.markdown("---")
 
-                    fig_date_trend = px.line(
-                        daily_trend,
-                        x="Date",
-                        y="Hours",
-                        markers=True,
-                        template="plotly_white",
-                        title="Daily Total NPT Trend (Hours)",
-                        labels={"Hours": "Downtime (Hours)", "Date": "Date"},
-                    )
-                    fig_date_trend.update_traces(
-                        line_color="#1E3A8A", line_width=3, marker_size=8
-                    )
-                    st.plotly_chart(fig_date_trend, use_container_width=True)
-
-                    st.markdown("---")
-
-                    col_chart1, col_chart2 = st.columns(2)
-                    with col_chart1:
-                        st.subheader("Daily Downtime by Line")
-                        daily_line = (
-                            df_date_filtered.groupby([df_date_filtered["Date"].dt.strftime("%Y-%m-%d"), "Line"])["Hours"]
+                        # Graph 1: Date vs Loss Hours (Line Trend Chart)
+                        daily_de_trend = (
+                            df_de_date_filtered.groupby(
+                                df_de_date_filtered["Date"].dt.strftime("%Y-%m-%d")
+                            )["Hours"]
                             .sum()
                             .reset_index()
                         )
-                        fig_daily_line = px.bar(
-                            daily_line,
+
+                        fig_de_trend = px.line(
+                            daily_de_trend,
                             x="Date",
                             y="Hours",
-                            color="Line",
-                            barmode="stack",
+                            markers=True,
                             template="plotly_white",
-                            title="Daily NPT Loss by Line",
+                            title="DE Line: Date vs Loss Hours",
+                            labels={"Hours": "Loss Hours", "Date": "Date"},
                         )
-                        st.plotly_chart(fig_daily_line, use_container_width=True)
+                        fig_de_trend.update_traces(
+                            line_color="#1E3A8A", line_width=3, marker_size=8
+                        )
+                        fig_de_trend.update_layout(
+                            xaxis_title="Date",
+                            yaxis_title="Total Loss Hours",
+                            margin=dict(l=20, r=20, t=40, b=20),
+                        )
+                        st.plotly_chart(fig_de_trend, use_container_width=True)
 
-                    with col_chart2:
-                        st.subheader("Daily Downtime by Primary Causes")
-                        daily_cause = (
-                            df_date_filtered.groupby([df_date_filtered["Date"].dt.strftime("%Y-%m-%d"), "Cause"])["Hours"]
+                        st.markdown("---")
+
+                        # Graph 2: Reasons of Loss Hours (Bar Chart)
+                        de_cause_summary = (
+                            df_de_date_filtered.groupby("Cause")["Hours"]
                             .sum()
                             .reset_index()
+                            .sort_values(by="Hours", ascending=False)
                         )
-                        fig_daily_cause = px.bar(
-                            daily_cause,
-                            x="Date",
-                            y="Hours",
-                            color="Cause",
-                            barmode="stack",
+
+                        fig_de_cause_bar = px.bar(
+                            de_cause_summary,
+                            x="Hours",
+                            y="Cause",
+                            orientation="h",
+                            color="Hours",
+                            color_continuous_scale="Reds",
                             template="plotly_white",
-                            title="Daily NPT Loss by Cause",
+                            title="DE Line: Loss Hours by Reason / Cause",
+                            labels={"Hours": "Loss Hours", "Cause": "Downtime Reason"},
                         )
-                        st.plotly_chart(fig_daily_cause, use_container_width=True)
-
-                    # Date Summary Table
-                    st.subheader("📋 Date-Wise Summary Table")
-                    date_table = (
-                        df_date_filtered.groupby(df_date_filtered["Date"].dt.strftime("%Y-%m-%d"))
-                        .agg(
-                            Total_Hours=("Hours", "sum"),
-                            Incident_Count=("Entry", "count"),
-                            Affected_Machines=("MC ID", "nunique"),
+                        fig_de_cause_bar.update_layout(
+                            yaxis={"categoryorder": "total ascending"},
+                            xaxis_title="Loss Hours",
+                            yaxis_title="Reason / Cause",
+                            showlegend=False,
+                            margin=dict(l=20, r=20, t=40, b=20),
                         )
-                        .reset_index()
-                        .rename(columns={
-                            "Date": "Date",
-                            "Total_Hours": "Total Downtime (Hrs)",
-                            "Incident_Count": "Total Events",
-                            "Affected_Machines": "Affected Machines"
-                        })
-                    )
-                    date_table["Total Downtime (Hrs)"] = date_table["Total Downtime (Hrs)"].round(2)
-                    st.dataframe(date_table, use_container_width=True)
+                        fig_de_cause_bar.update_traces(
+                            texttemplate="%{x:.1f}h",
+                            textposition="outside",
+                            cliponaxis=False,
+                        )
+                        st.plotly_chart(fig_de_cause_bar, use_container_width=True)
 
+                    else:
+                        st.warning("No data found for the selected date range on DE Line.")
                 else:
-                    st.warning(
-                        "The current report data format does not contain date timestamps required for Date-Wise view. Ensure the uploaded Excel contains the 'Data' tab with date logs."
-                    )
+                    st.warning("The uploaded report lacks valid 'Date' entries required for date-wise analysis.")
 
         except Exception as e:
-            st.error(f"Error processing NPT file: {e}")
-            st.info(
-                "Ensure that your uploaded file has valid data or the 'MC Wise' / 'Data' tab."
-            )
-    else:
-        st.info(
-            "👈 Upload your daily NPT report in the sidebar to activate the analysis options."
-        )
+            st.error(f"An error occurred while processing the file: {str(e)}")
 
-# -----------------------------------------------------------------------------
-# MODULE 2, 3, 4 STUBS
-# -----------------------------------------------------------------------------
+# Placeholder for remaining app modules
 elif app_mode == "❌ Rejection Analysis":
-    st.title("❌ Rejection & Scrap Analysis Module")
-
+    st.title("❌ Rejection Analysis")
+    st.info("Rejection Analysis module coming soon.")
 elif app_mode == "🏭 Production Data":
-    st.title("🏭 Production Output Module")
-
+    st.title("🏭 Production Data")
+    st.info("Production Data module coming soon.")
 elif app_mode == "📊 Master Summary":
-    st.title("📊 Master Executive Summary Dashboard")
-import pandas as pd
-import plotly.express as px
-import streamlit as st
-
-# ---------------------------------------------------------
-# 1. Line Selection & Date-wise Filter UI
-# ---------------------------------------------------------
-st.sidebar.header("Date-wise Line Filter")
-
-# Get unique lines available in dataset
-available_lines = sorted(df_filtered["Line"].dropna().unique().tolist())
-
-selected_line = st.sidebar.selectbox(
-    "Select Line:",
-    options=["All Lines"] + available_lines,
-    index=0 if "DE" not in available_lines else available_lines.index("DE") + 1,
-)
-
-# Date Range Selection
-min_date = df_filtered["Date"].min()
-max_date = df_filtered["Date"].max()
-
-date_range = st.sidebar.date_input(
-    "Select Date Range:",
-    value=(min_date, max_date),
-    min_value=min_date,
-    max_value=max_date,
-)
-
-# Filter Dataset based on selections
-df_line_date = df_filtered.copy()
-
-if selected_line != "All Lines":
-    df_line_date = df_line_date[df_line_date["Line"] == selected_line]
-
-if len(date_range) == 2:
-    start_date, end_date = date_range
-    df_line_date = df_line_date[
-        (df_line_date["Date"] >= start_date) & (df_line_date["Date"] <= end_date)
-    ]
-
-# ---------------------------------------------------------
-# 2. Daily Comparison Visualizations & Metrics
-# ---------------------------------------------------------
-st.markdown(f"## Date-wise NPT Performance: **{selected_line}**")
-
-# Group data by Date and Machine / Cause for side-by-side comparison
-daily_summary = (
-    df_line_date.groupby(["Date", "MC Number", "Cause"])["Hours"]
-    .sum()
-    .reset_index()
-)
-
-daily_total = (
-    df_line_date.groupby("Date")[["Hours", "Entry"]].sum().reset_index()
-)
-
-# Key Summary Metrics
-col1, col2, col3 = st.columns(3)
-col1.metric("Selected Line", selected_line)
-col2.metric("Total Line Loss (Hrs)", f"{daily_total['Hours'].sum():.2f} hrs")
-col3.metric("Total Events", int(daily_total["Entry"].sum()))
-
-st.markdown("---")
-
-# Chart 1: Daily Total NPT Trend Comparison
-fig_daily_trend = px.bar(
-    daily_summary,
-    x="Date",
-    y="Hours",
-    color="MC Number",
-    title=f"Daily NPT Breakdown by Machine ({selected_line})",
-    labels={"Hours": "Loss Hours", "Date": "Date", "MC Number": "Machine"},
-    barmode="stack",
-    template="plotly_white",
-)
-st.plotly_chart(fig_daily_trend, use_container_width=True)
-
-# Chart 2: Cause Distribution Across Dates
-fig_cause_trend = px.bar(
-    daily_summary,
-    x="Date",
-    y="Hours",
-    color="Cause",
-    title=f"Daily NPT Breakdown by Loss Cause ({selected_line})",
-    labels={"Hours": "Loss Hours", "Date": "Date"},
-    barmode="group",
-    template="plotly_white",
-)
-st.plotly_chart(fig_cause_trend, use_container_width=True)
-
-# ---------------------------------------------------------
-# 3. Pivot Table View: Machine vs Date Matrix
-# ---------------------------------------------------------
-st.markdown("### Date vs Machine Comparison Pivot Table (Hours)")
-
-pivot_matrix = pd.pivot_table(
-    df_line_date,
-    values="Hours",
-    index=["MC Number", "MC ID"],
-    columns="Date",
-    aggfunc="sum",
-    fill_value=0,
-)
-
-# Highlight max values in table
-st.dataframe(
-    pivot_matrix.style.highlight_max(axis=0, color="#ffcdd2").format(
-        "{:.2f}"
-    ),
-    use_container_width=True,
-)
+    st.title("📊 Master Summary")
+    st.info("Master Summary module coming soon.")
