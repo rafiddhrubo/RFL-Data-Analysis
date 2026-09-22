@@ -160,7 +160,7 @@ def parse_mc_wise_sheet(df_raw):
 
 
 def parse_data_sheet(df_raw):
-    """Parses row-by-row transaction log 'Data' tab to extract dates and durations."""
+    """Parses row-by-row transaction log 'Data' tab."""
     df_data = df_raw.dropna(subset=["Machine", "Cause"]).copy()
 
     # Extract or calculate Hours
@@ -174,8 +174,12 @@ def parse_data_sheet(df_raw):
             df_data["Duration"].astype(str), errors="coerce"
         ).dt.total_seconds() / 3600.0
 
-    # Parse Date column
-    if "From Time" in df_data.columns:
+    # Read helper column 'Date' directly, or fallback to timestamps
+    if "Date" in df_data.columns:
+        df_data["Date"] = pd.to_datetime(
+            df_data["Date"], errors="coerce"
+        ).dt.date
+    elif "From Time" in df_data.columns:
         df_data["Date"] = pd.to_datetime(
             df_data["From Time"], errors="coerce"
         ).dt.date
@@ -656,7 +660,6 @@ if app_mode == "⏱️ NPT Analysis":
             elif npt_view == "4. Date wise":
                 st.header("📅 Date-Wise NPT Breakdown & Root Causes (DE Line)")
 
-                # Strictly filter for DE Line first
                 df_de_line = df_filtered[df_filtered["Line"] == "DE"].copy()
 
                 if df_de_line.empty:
@@ -689,10 +692,8 @@ if app_mode == "⏱️ NPT Analysis":
                     if not df_de_date_filtered.empty:
                         st.markdown("---")
 
-                        # Format date for cleaner display on x-axis
                         df_de_date_filtered["Date_Str"] = df_de_date_filtered["Date"].dt.strftime("%Y-%m-%d")
 
-                        # Aggregation for Date + Cause breakdown
                         daily_cause_breakdown = (
                             df_de_date_filtered.groupby(["Date_Str", "Cause"])["Hours"]
                             .sum()
