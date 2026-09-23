@@ -798,8 +798,10 @@ if app_mode == "⏱️ NPT Analysis":
                         comp_df["Change (%)"] = comp_df.apply(calc_pct, axis=1)
                         comp_df = comp_df.sort_values(by="Period 2 (Hrs)", ascending=False)
 
-                        # Side-by-Side Chart Comparison
-                        st.subheader("📊 Side-by-Side Downtime Cause Comparison")
+                        # -----------------------------------------------------
+                        # CHART 1: Side-by-Side Chart Comparison
+                        # -----------------------------------------------------
+                        st.subheader("📊 Chart 1: Side-by-Side Downtime Cause Comparison")
 
                         chart_comp_df = comp_df.reset_index().melt(
                             id_vars=["Cause"],
@@ -831,6 +833,73 @@ if app_mode == "⏱️ NPT Analysis":
                             texttemplate="%{y:.1f}h", textposition="outside"
                         )
                         st.plotly_chart(fig_side_by_side, use_container_width=True)
+
+                        st.markdown("---")
+
+                        # -----------------------------------------------------
+                        # CHART 2: Daily Stacked Bar Chart (Matching Image)
+                        # -----------------------------------------------------
+                        line_str = f" ({selected_comp_line})" if selected_comp_line != "All Lines" else " (All Lines)"
+                        st.subheader(f"📊 Chart 2: Daily Downtime Breakdown by Reason{line_str}")
+
+                        if not df_p2.empty:
+                            # Aggregate daily downtime by Date and Cause
+                            daily_cause_df = (
+                                df_p2.groupby([df_p2["Date"].dt.strftime("%b %d\n%Y"), "Cause"])["Hours"]
+                                .sum()
+                                .reset_index()
+                            )
+
+                            # Maintain proper chronological order for X-axis
+                            unique_dates_ordered = (
+                                df_p2["Date"]
+                                .sort_values()
+                                .dt.strftime("%b %d\n%Y")
+                                .unique()
+                                .tolist()
+                            )
+
+                            fig_daily_stacked = px.bar(
+                                daily_cause_df,
+                                x="Date",
+                                y="Hours",
+                                color="Cause",
+                                barmode="stack",
+                                template="plotly_white",
+                                title=f"Daily Downtime Breakdown by Reason{line_str} - Period 2 ({p2_start.strftime('%b %d')} to {p2_end.strftime('%b %d')})",
+                                category_orders={"Date": unique_dates_ordered},
+                                color_discrete_sequence=px.colors.qualitative.Alphabet,
+                            )
+
+                            fig_daily_stacked.update_layout(
+                                xaxis_title="Date",
+                                yaxis_title="Loss Hours",
+                                legend_title_text="Downtime Cause:",
+                                legend=dict(
+                                    orientation="h",
+                                    yanchor="top",
+                                    y=-0.28,
+                                    xanchor="left",
+                                    x=0,
+                                    font=dict(size=11),
+                                ),
+                                margin=dict(l=20, r=20, t=50, b=150),
+                            )
+
+                            # Display formatted hour text directly on stacked bar segments
+                            fig_daily_stacked.update_traces(
+                                texttemplate="%{y:.1f}h",
+                                textposition="inside",
+                                insidetextanchor="middle",
+                                marker_line_color="#FFFFFF",
+                                marker_line_width=1,
+                            )
+
+                            st.plotly_chart(fig_daily_stacked, use_container_width=True)
+                        else:
+                            st.info("No data available in Period 2 to render the daily breakdown chart.")
+
+                        st.markdown("---")
 
                         # Variance Table
                         st.subheader("📋 Cause-wise Variance & Progress Breakdown")
