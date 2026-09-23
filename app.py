@@ -164,7 +164,6 @@ def parse_data_sheet(df_raw):
     """Parses row-by-row transaction log 'Data' tab."""
     df_data = df_raw.dropna(subset=["Machine", "Cause"]).copy()
 
-    # Extract or calculate Hours
     if "Duration (In Second)" in df_data.columns:
         df_data["Hours"] = (
             pd.to_numeric(df_data["Duration (In Second)"], errors="coerce")
@@ -178,7 +177,6 @@ def parse_data_sheet(df_raw):
             / 3600.0
         )
 
-    # Parse Date helper column directly
     if "Date" in df_data.columns:
         df_data["Date"] = pd.to_datetime(
             df_data["Date"], errors="coerce"
@@ -706,8 +704,8 @@ if app_mode == "⏱️ NPT Analysis":
                     # Default period suggestions
                     p1_default_start = min_d
                     p1_default_end = (
-                        min_d + pd.Timedelta(days=7)
-                        if min_d + pd.Timedelta(days=7) <= max_d
+                        min_d + pd.Timedelta(days=3)
+                        if min_d + pd.Timedelta(days=3) <= max_d
                         else max_d
                     )
                     p2_default_start = (
@@ -719,7 +717,7 @@ if app_mode == "⏱️ NPT Analysis":
 
                     col_p1, col_p2 = st.columns(2)
                     with col_p1:
-                        st.markdown("### 🗓️ Period 1 (Baseline / Previous Week)")
+                        st.markdown("### 🗓️ Period 1 (Baseline Range)")
                         p1_range = st.date_input(
                             "Period 1 Date Range:",
                             value=(p1_default_start, p1_default_end),
@@ -729,9 +727,7 @@ if app_mode == "⏱️ NPT Analysis":
                         )
 
                     with col_p2:
-                        st.markdown(
-                            "### 🗓️ Period 2 (Comparison / Current Week)"
-                        )
+                        st.markdown("### 🗓️ Period 2 (Comparison Range)")
                         p2_range = st.date_input(
                             "Period 2 Date Range:",
                             value=(p2_default_start, p2_default_end),
@@ -888,7 +884,7 @@ if app_mode == "⏱️ NPT Analysis":
                         st.markdown("---")
 
                         # -----------------------------------------------------
-                        # CHART 2: Daily Stacked Bar Chart (Fixed Categorical Dates)
+                        # CHART 2: Daily Downtime Breakdown (Period 1 Start to Period 2 End)
                         # -----------------------------------------------------
                         line_str = (
                             f" ({selected_comp_line})"
@@ -899,37 +895,44 @@ if app_mode == "⏱️ NPT Analysis":
                             f"📊 Chart 2: Daily Downtime Breakdown by Reason{line_str}"
                         )
 
-                        if not df_p2.empty:
-                            # 1. Clean date column to pure calendar dates
-                            df_p2_chart = df_p2.copy()
-                            df_p2_chart["CleanDate"] = pd.to_datetime(
-                                df_p2_chart["Date"]
-                            ).dt.date
+                        # 1. Take Period 1's first date value and Period 2's last date value
+                        full_range_start = p1_start
+                        full_range_end = p2_end
 
-                            # 2. Format date for X-axis labels (e.g., "Sep 18")
-                            df_p2_chart["Date_Label"] = pd.to_datetime(
-                                df_p2_chart["CleanDate"]
+                        # 2. Filter dataset across the combined range
+                        df_full_range = df_date_valid[
+                            (df_date_valid["Date"].dt.date >= full_range_start)
+                            & (df_date_valid["Date"].dt.date <= full_range_end)
+                        ]
+
+                        if not df_full_range.empty:
+                            # 3. Build a continuous date sequence from start to end (e.g., Sep 14 to Sep 21)
+                            all_days = pd.date_range(full_range_start, full_range_end).date
+                            timeline_df = pd.DataFrame({"CleanDate": all_days})
+                            timeline_df["Date_Label"] = pd.to_datetime(
+                                timeline_df["CleanDate"]
+                            ).dt.strftime("%b %d")
+                            ordered_dates = timeline_df["Date_Label"].tolist()
+
+                            # 4. Prepare dates for chart grouping
+                            df_chart_range = df_full_range.copy()
+                            df_chart_range["CleanDate"] = pd.to_datetime(
+                                df_chart_range["Date"]
+                            ).dt.date
+                            df_chart_range["Date_Label"] = pd.to_datetime(
+                                df_chart_range["CleanDate"]
                             ).dt.strftime("%b %d")
 
-                            # 3. Create chronological order based on actual dates
-                            ordered_dates = (
-                                df_p2_chart.sort_values("CleanDate")[
-                                    "Date_Label"
-                                ]
-                                .unique()
-                                .tolist()
-                            )
-
-                            # 4. Group downtime hours by day and Cause
+                            # 5. Group downtime hours by day and Cause
                             daily_cause_df = (
-                                df_p2_chart.groupby(["Date_Label", "Cause"])[
+                                df_chart_range.groupby(["Date_Label", "Cause"])[
                                     "Hours"
                                 ]
                                 .sum()
                                 .reset_index()
                             )
 
-                            # 5. Build stacked daily bar chart
+                            # 6. Build stacked daily bar chart for the entire range
                             fig_daily_stacked = px.bar(
                                 daily_cause_df,
                                 x="Date_Label",
@@ -937,13 +940,13 @@ if app_mode == "⏱️ NPT Analysis":
                                 color="Cause",
                                 barmode="stack",
                                 template="plotly_white",
-                                title=f"Daily Downtime Breakdown by Reason{line_str} - Period 2 ({p2_start.strftime('%b %d')} to {p2_end.strftime('%b %d')})",
+                                title=f"Daily Downtime Breakdown by Reason{line_str} ({full_range_start.strftime('%b %d')} to {full_range_end.strftime('%b %d')})",
                                 category_orders={"Date_Label": ordered_dates},
                                 color_discrete_sequence=px.colors.qualitative.Alphabet,
                             )
 
                             fig_daily_stacked.update_layout(
-                                xaxis_type="category",  # Enforces categorical scale on X-axis
+                                xaxis_type="category",
                                 xaxis_title="Date",
                                 yaxis_title="Loss Hours",
                                 legend_title_text="Downtime Cause:",
@@ -971,7 +974,7 @@ if app_mode == "⏱️ NPT Analysis":
                             )
                         else:
                             st.info(
-                                "No data available in Period 2 to render the daily breakdown chart."
+                                "No downtime data available within the selected overall date range."
                             )
 
                         st.markdown("---")
@@ -990,7 +993,6 @@ if app_mode == "⏱️ NPT Analysis":
         except Exception as e:
             st.error(f"An error occurred while processing the file: {str(e)}")
 
-# Placeholder for remaining app modules
 elif app_mode == "❌ Rejection Analysis":
     st.title("❌ Rejection Analysis")
     st.info("Rejection Analysis module coming soon.")
