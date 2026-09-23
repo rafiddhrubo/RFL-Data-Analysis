@@ -171,9 +171,12 @@ def parse_data_sheet(df_raw):
             / 3600.0
         )
     elif "Duration" in df_data.columns:
-        df_data["Hours"] = pd.to_timedelta(
-            df_data["Duration"].astype(str), errors="coerce"
-        ).dt.total_seconds() / 3600.0
+        df_data["Hours"] = (
+            pd.to_timedelta(
+                df_data["Duration"].astype(str), errors="coerce"
+            ).dt.total_seconds()
+            / 3600.0
+        )
 
     # Parse Date helper column directly
     if "Date" in df_data.columns:
@@ -271,7 +274,10 @@ if app_mode == "⏱️ NPT Analysis":
                     )
                     df_parsed = df_raw
 
-            if "Machine" in df_parsed.columns and "MC ID" not in df_parsed.columns:
+            if (
+                "Machine" in df_parsed.columns
+                and "MC ID" not in df_parsed.columns
+            ):
                 df_parsed["MC ID"] = df_parsed["Machine"]
 
             if "MC ID" in df_parsed.columns:
@@ -475,7 +481,9 @@ if app_mode == "⏱️ NPT Analysis":
                     )
 
                     chart_data = (
-                        df_selected_line.groupby(["MC Number", "Cause"])["Hours"]
+                        df_selected_line.groupby(["MC Number", "Cause"])[
+                            "Hours"
+                        ]
                         .sum()
                         .reset_index()
                     )
@@ -659,11 +667,20 @@ if app_mode == "⏱️ NPT Analysis":
             elif npt_view == "4. Date wise":
                 st.header("📅 Date-Wise NPT Analysis & Period Comparison")
 
-                if "Date" not in df_filtered.columns or df_filtered["Date"].isna().all():
-                    st.error("No valid 'Date' column found in the uploaded data.")
+                if (
+                    "Date" not in df_filtered.columns
+                    or df_filtered["Date"].isna().all()
+                ):
+                    st.error(
+                        "No valid 'Date' column found in the uploaded data."
+                    )
                 else:
-                    df_date_valid = df_filtered[df_filtered["Date"].notna()].copy()
-                    df_date_valid["Date"] = pd.to_datetime(df_date_valid["Date"])
+                    df_date_valid = df_filtered[
+                        df_filtered["Date"].notna()
+                    ].copy()
+                    df_date_valid["Date"] = pd.to_datetime(
+                        df_date_valid["Date"]
+                    )
 
                     min_d = df_date_valid["Date"].min().date()
                     max_d = df_date_valid["Date"].max().date()
@@ -679,15 +696,25 @@ if app_mode == "⏱️ NPT Analysis":
                     )
 
                     if selected_comp_line != "All Lines":
-                        df_date_valid = df_date_valid[df_date_valid["Line"] == selected_comp_line]
+                        df_date_valid = df_date_valid[
+                            df_date_valid["Line"] == selected_comp_line
+                        ]
 
                     st.markdown("---")
                     st.subheader("🔄 Select Date Ranges to Compare Progress")
 
                     # Default period suggestions
                     p1_default_start = min_d
-                    p1_default_end = min_d + pd.Timedelta(days=7) if min_d + pd.Timedelta(days=7) <= max_d else max_d
-                    p2_default_start = p1_default_end + pd.Timedelta(days=1) if p1_default_end + pd.Timedelta(days=1) <= max_d else min_d
+                    p1_default_end = (
+                        min_d + pd.Timedelta(days=7)
+                        if min_d + pd.Timedelta(days=7) <= max_d
+                        else max_d
+                    )
+                    p2_default_start = (
+                        p1_default_end + pd.Timedelta(days=1)
+                        if p1_default_end + pd.Timedelta(days=1) <= max_d
+                        else min_d
+                    )
                     p2_default_end = max_d
 
                     col_p1, col_p2 = st.columns(2)
@@ -702,7 +729,9 @@ if app_mode == "⏱️ NPT Analysis":
                         )
 
                     with col_p2:
-                        st.markdown("### 🗓️ Period 2 (Comparison / Current Week)")
+                        st.markdown(
+                            "### 🗓️ Period 2 (Comparison / Current Week)"
+                        )
                         p2_range = st.date_input(
                             "Period 2 Date Range:",
                             value=(p2_default_start, p2_default_end),
@@ -774,16 +803,30 @@ if app_mode == "⏱️ NPT Analysis":
                                 f"⚠️ **ATTENTION REQUIRED:** NPT **INCREASED by {pct_change:.2f}%** (+{diff_hrs:.2f} hours loss) in Period 2 compared to Period 1!"
                             )
                         else:
-                            st.info("ℹ️ NPT remained identical across both period windows.")
+                            st.info(
+                                "ℹ️ NPT remained identical across both period windows."
+                            )
 
                         st.markdown("---")
 
                         # Cause-by-cause comparison dataframe construction
-                        c_p1 = df_p1.groupby("Cause")["Hours"].sum().rename("Period 1 (Hrs)")
-                        c_p2 = df_p2.groupby("Cause")["Hours"].sum().rename("Period 2 (Hrs)")
+                        c_p1 = (
+                            df_p1.groupby("Cause")["Hours"]
+                            .sum()
+                            .rename("Period 1 (Hrs)")
+                        )
+                        c_p2 = (
+                            df_p2.groupby("Cause")["Hours"]
+                            .sum()
+                            .rename("Period 2 (Hrs)")
+                        )
 
-                        comp_df = pd.merge(c_p1, c_p2, on="Cause", how="outer").fillna(0)
-                        comp_df["Variance (Hrs)"] = comp_df["Period 2 (Hrs)"] - comp_df["Period 1 (Hrs)"]
+                        comp_df = pd.merge(c_p1, c_p2, on="Cause", how="outer").fillna(
+                            0
+                        )
+                        comp_df["Variance (Hrs)"] = (
+                            comp_df["Period 2 (Hrs)"] - comp_df["Period 1 (Hrs)"]
+                        )
 
                         def calc_pct(row):
                             p1 = row["Period 1 (Hrs)"]
@@ -796,12 +839,16 @@ if app_mode == "⏱️ NPT Analysis":
                             return f"{chg:+.1f}%"
 
                         comp_df["Change (%)"] = comp_df.apply(calc_pct, axis=1)
-                        comp_df = comp_df.sort_values(by="Period 2 (Hrs)", ascending=False)
+                        comp_df = comp_df.sort_values(
+                            by="Period 2 (Hrs)", ascending=False
+                        )
 
                         # -----------------------------------------------------
                         # CHART 1: Side-by-Side Chart Comparison
                         # -----------------------------------------------------
-                        st.subheader("📊 Chart 1: Side-by-Side Downtime Cause Comparison")
+                        st.subheader(
+                            "📊 Chart 1: Side-by-Side Downtime Cause Comparison"
+                        )
 
                         chart_comp_df = comp_df.reset_index().melt(
                             id_vars=["Cause"],
@@ -820,7 +867,9 @@ if app_mode == "⏱️ NPT Analysis":
                             title=f"NPT Loss Comparison by Cause ({selected_comp_line})",
                             color_discrete_map={
                                 "Period 1 (Hrs)": "#6366F1",
-                                "Period 2 (Hrs)": "#EF4444" if diff_hrs > 0 else "#10B981",
+                                "Period 2 (Hrs)": (
+                                    "#EF4444" if diff_hrs > 0 else "#10B981"
+                                ),
                             },
                         )
                         fig_side_by_side.update_layout(
@@ -832,53 +881,76 @@ if app_mode == "⏱️ NPT Analysis":
                         fig_side_by_side.update_traces(
                             texttemplate="%{y:.1f}h", textposition="outside"
                         )
-                        st.plotly_chart(fig_side_by_side, use_container_width=True)
+                        st.plotly_chart(
+                            fig_side_by_side, use_container_width=True
+                        )
 
                         st.markdown("---")
 
                         # -----------------------------------------------------
-                        # CHART 2: Daily Stacked Bar Chart (Matching Image)
+                        # CHART 2: Daily Stacked Bar Chart (Fixed Categorical Dates)
                         # -----------------------------------------------------
-                        line_str = f" ({selected_comp_line})" if selected_comp_line != "All Lines" else " (All Lines)"
-                        st.subheader(f"📊 Chart 2: Daily Downtime Breakdown by Reason{line_str}")
+                        line_str = (
+                            f" ({selected_comp_line})"
+                            if selected_comp_line != "All Lines"
+                            else " (All Lines)"
+                        )
+                        st.subheader(
+                            f"📊 Chart 2: Daily Downtime Breakdown by Reason{line_str}"
+                        )
 
                         if not df_p2.empty:
-                            # Aggregate daily downtime by Date and Cause
-                            daily_cause_df = (
-                                df_p2.groupby([df_p2["Date"].dt.strftime("%b %d\n%Y"), "Cause"])["Hours"]
-                                .sum()
-                                .reset_index()
-                            )
+                            # 1. Clean date column to pure calendar dates
+                            df_p2_chart = df_p2.copy()
+                            df_p2_chart["CleanDate"] = pd.to_datetime(
+                                df_p2_chart["Date"]
+                            ).dt.date
 
-                            # Maintain proper chronological order for X-axis
-                            unique_dates_ordered = (
-                                df_p2["Date"]
-                                .sort_values()
-                                .dt.strftime("%b %d\n%Y")
+                            # 2. Format date for X-axis labels (e.g., "Sep 18")
+                            df_p2_chart["Date_Label"] = pd.to_datetime(
+                                df_p2_chart["CleanDate"]
+                            ).dt.strftime("%b %d")
+
+                            # 3. Create chronological order based on actual dates
+                            ordered_dates = (
+                                df_p2_chart.sort_values("CleanDate")[
+                                    "Date_Label"
+                                ]
                                 .unique()
                                 .tolist()
                             )
 
+                            # 4. Group downtime hours by day and Cause
+                            daily_cause_df = (
+                                df_p2_chart.groupby(["Date_Label", "Cause"])[
+                                    "Hours"
+                                ]
+                                .sum()
+                                .reset_index()
+                            )
+
+                            # 5. Build stacked daily bar chart
                             fig_daily_stacked = px.bar(
                                 daily_cause_df,
-                                x="Date",
+                                x="Date_Label",
                                 y="Hours",
                                 color="Cause",
                                 barmode="stack",
                                 template="plotly_white",
                                 title=f"Daily Downtime Breakdown by Reason{line_str} - Period 2 ({p2_start.strftime('%b %d')} to {p2_end.strftime('%b %d')})",
-                                category_orders={"Date": unique_dates_ordered},
+                                category_orders={"Date_Label": ordered_dates},
                                 color_discrete_sequence=px.colors.qualitative.Alphabet,
                             )
 
                             fig_daily_stacked.update_layout(
+                                xaxis_type="category",  # Enforces categorical scale on X-axis
                                 xaxis_title="Date",
                                 yaxis_title="Loss Hours",
                                 legend_title_text="Downtime Cause:",
                                 legend=dict(
                                     orientation="h",
                                     yanchor="top",
-                                    y=-0.28,
+                                    y=-0.25,
                                     xanchor="left",
                                     x=0,
                                     font=dict(size=11),
@@ -886,7 +958,6 @@ if app_mode == "⏱️ NPT Analysis":
                                 margin=dict(l=20, r=20, t=50, b=150),
                             )
 
-                            # Display formatted hour text directly on stacked bar segments
                             fig_daily_stacked.update_traces(
                                 texttemplate="%{y:.1f}h",
                                 textposition="inside",
@@ -895,9 +966,13 @@ if app_mode == "⏱️ NPT Analysis":
                                 marker_line_width=1,
                             )
 
-                            st.plotly_chart(fig_daily_stacked, use_container_width=True)
+                            st.plotly_chart(
+                                fig_daily_stacked, use_container_width=True
+                            )
                         else:
-                            st.info("No data available in Period 2 to render the daily breakdown chart.")
+                            st.info(
+                                "No data available in Period 2 to render the daily breakdown chart."
+                            )
 
                         st.markdown("---")
 
